@@ -5,11 +5,11 @@ A focused, two-party electronic signature MVP for Ready Ready Motors, Inc. React
 ## What works
 
 - Approved admins sign in with Supabase email/password, upload an unencrypted PDF (10 MB, 100 pages maximum), and place up to 50 signature/date fields on any page.
-- Default company signer: **Lichen Wang**, `readyreadymotors9999@gmail.com`. The authenticated admin draws a signature and consents during preparation; the server applies that signature and UTC date before inviting the other signer. Both people require signature and date fields. The backend refuses to sign as Lichen from another admin email.
+- Default company signer: **Lichen Wang**, `readyreadymotors9999@gmail.com`. The authenticated admin types or draws a signature and consents during preparation; the server applies that signature and UTC date before inviting the other signer. Both people require signature and date fields. The backend refuses to sign as Lichen from another admin email.
 - Import a **private Google Doc** via browser Google OAuth as a PDF snapshot, or upload a PDF. Choose your own eSign filename at import and rename drafts later. The original Google Doc is never edited or made public.
 - Save recipient first/last names and email in an owner-private address book. One external recipient per document, including `@qq.com`. An invitation expires in 72 hours. Admins can revoke an outstanding invitation and return the document to draft to send a replacement.
 - Create a private share link **without sending email**, or send an email invitation **only to the external recipient**. Share links use the same 72-hour expiry, revocation and one-time completion rules; their raw token is shown only immediately after creation and is not recoverable from the database.
-- Recipients review the PDF already signed by Lichen and sign on touch devices without registering. Their drawn signature fills only recipient fields; dates use the server's UTC date.
+- Recipients review the PDF already signed by Lichen and sign on touch devices without registering. They choose a typed-name signature (with an exact image preview) or draw by finger/mouse/stylus. Their chosen signature fills only recipient fields; dates use the server's UTC date.
 - A server-generated signed PDF includes a completion certificate. Private originals and signed PDFs remain in Supabase. Admins download signed PDFs and review timestamped audit events, signer consent/name, request IP metadata and SHA-256 hashes.
 - Signing completion is claimed atomically; concurrent, expired, revoked and reused tokens cannot sign again.
 
@@ -124,8 +124,8 @@ The access token is used transiently in the browser to export through the Drive 
 Run this before sending customer documents:
 
 1. Sign in as an enrolled admin. Confirm a non-admin Auth user is denied access.
-2. Upload a multi-page PDF, including a rotated page, with a custom filename. Place a signature and date field for **Lichen Wang** and another signature/date pair for **Recipient**. Draw Lichen’s signature, consent, enter/save a recipient, choose email delivery, and send to a real QQ mailbox you control. Confirm the email arrives and contains your exact deployed Pages URL.
-3. Open the emailed link on a phone and verify Lichen’s signature is already present. Review every page, enter a full name, draw a signature, check consent, and submit.
+2. Upload a multi-page PDF, including a rotated page, with a custom filename. Place a signature and date field for **Lichen Wang** and another signature/date pair for **Recipient**. Type or draw Lichen’s signature, consent, enter/save a recipient, choose email delivery, and send to a real QQ mailbox you control. Confirm the email arrives and contains your exact deployed Pages URL.
+3. Open the emailed link on a phone and verify Lichen’s signature is already present. Review every page, enter a full name, type or draw a signature, check consent, and submit.
 4. Confirm the admin sees `completed`, downloads the PDF, and verifies placement/date/certificate and `document signed` in the audit trail.
 5. Refresh/reopen the signing URL and attempt a second submission. Both must fail. Confirm the private bucket has no public reads.
 6. Repeat using **Create share link (no email)** with Resend secrets absent; copy/open the link and verify both signatures survive finalization. Test private Google Doc import with the authorized account and a custom filename.
@@ -139,6 +139,7 @@ Live email, Supabase authentication/storage and deployed signing must be validat
 - Private, 60-second Storage URLs are issued after authorization. They remain usable until their short expiry even if an invitation is revoked/completed. Do not share URLs. Browser recipients necessarily receive the prepared, company-signed PDF while reviewing it. They see only their own empty field overlays; finalization never reapplies their signature to company fields.
 - The server stores a separate, immutable company-signed PDF per preparation attempt; the original stays intact. Company signature consent, timestamp, email and prepared/original hashes are recorded atomically with the invitation. Revoking returns to the original for a fresh preparation; old signed revisions remain private for audit/reconciliation. Ambiguous preparation transactions can leave private orphan files, which must be reconciled before cleanup.
 - Original uploads are immutable to clients and only allowed at an owner-specific, server-reserved path. Only server code can generate signed documents or mutate workflow/audit tables. Audit rows are append-only to application users; Supabase project operators retain privileged access.
+- Both typed and drawn signatures are converted to the same fixed-size PNG in the browser, embedded server-side, and covered by the same consent and one-time completion checks. The selected method is recorded in the audit metadata and completion certificate. A typed signature is not an identity verification mechanism. Changing signature modes or clearing the preview invalidates the prior signature until a new one is supplied.
 - The function does not log tokens, PDF data or provider secrets. Audit records contain personal data; establish retention, access and backup policies. `x-forwarded-for` is recorded as request metadata and depends on Supabase's proxy trust; it is not proof of signer identity.
 - Email API acceptance is recorded separately from signing. On send failure/timeout the token is revoked when possible. Refresh the document before retrying. If an email arrives after timeout, its revoked link will not sign.
 - Completing claims a session as `processing`. Before a PDF has been stored, a processing failure can restore it to pending. After storage succeeds, an ambiguous database failure leaves it processing to avoid replay. An operator must inspect DB and Storage, reconcile the audit/transaction, and recover it; do not blindly reset processing or completed rows. Automatic crash recovery is outside this MVP.
@@ -161,3 +162,19 @@ Live email, Supabase authentication/storage and deployed signing must be validat
 - **Supabase** requires your own account/project for Auth, private Storage, database and Edge Functions. The browser needs only the **public project URL and anon/publishable key**. Service-role keys stay inside Supabase; deployed functions receive them automatically. Do not send a Supabase personal access token or service-role secret in chat. If an operator automates CLI deployment, supply its credentials through a secure secret binding, never a committed file.
 - **Resend** delivers invitation emails from a verified sending domain. It is optional if you use share links. Its API key belongs only in Supabase Edge Function secrets. A verified sending domain needs DNS setup with your current domain/DNS provider; using Cloudflare specifically is optional.
 - **Google OAuth** is optional for private Docs import. Only the public web Client ID belongs in frontend variables; no Google client secret is used by this browser flow.
+
+## This project's Supabase connection
+
+The provided public project URL is `https://nyjhgexemcxfncoepudy.supabase.co` (also in `.env.example`). Find the **publishable key** under your Supabase project's **Settings → API Keys**. A legacy public `anon` key also works. Do not use a secret/service-role key.
+
+GitHub **repository Settings → Secrets and variables → Actions → Variables** (not Pages settings):
+
+| Variable                 | Value                                                   |
+| ------------------------ | ------------------------------------------------------- |
+| `VITE_SUPABASE_URL`      | `https://nyjhgexemcxfncoepudy.supabase.co`              |
+| `VITE_SUPABASE_ANON_KEY` | Your public `sb_publishable_…` key (or legacy anon key) |
+| `VITE_GOOGLE_CLIENT_ID`  | Optional public Google OAuth web Client ID              |
+
+GitHub **Settings → Pages → Source → GitHub Actions** enables frontend hosting. These repository settings require the appropriate GitHub App/owner permissions; Git push access alone does not grant them.
+
+Supabase **Edge Functions → Secrets** stores `APP_ORIGIN`, `APP_URL`, and (only for email invitations) `RESEND_API_KEY` and `EMAIL_FROM`. Supabase supplies its service-role key to deployed Edge Functions automatically. Do not add service-role/secret keys, personal access tokens, or database passwords to frontend `VITE_*` variables. Creating the Supabase project is the first step: apply both SQL migrations, deploy the Edge Function, and enroll the admin account before live signing can work.

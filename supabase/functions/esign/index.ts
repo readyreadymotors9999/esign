@@ -9,6 +9,7 @@ import {
   escapeHtml,
   ValidationError,
   signaturePng,
+  signatureMethodValue,
   twoPartyFields,
 } from "../_shared/validation.ts";
 const env = (key: string) => {
@@ -118,6 +119,7 @@ async function complete(body: any, request: Request) {
   )
     fail("Your full name and electronic signature consent are required.");
   const png = signaturePng(body.signature);
+  const signatureMethod = signatureMethodValue(body.signatureMethod);
   const hash = await digest(tokenValue(body.token));
   const { data: s, error } = await db.rpc("claim_signing_session", {
     p_hash: hash,
@@ -139,6 +141,8 @@ async function complete(body: any, request: Request) {
       s.recipient_email,
       body.name.trim(),
       now,
+      "Possession of a private signing link",
+      signatureMethod,
     );
     if (bytes.length > 10485760)
       fail(
@@ -154,6 +158,7 @@ async function complete(body: any, request: Request) {
       p_path: path,
       p_metadata: {
         name: body.name.trim(),
+        signature_method: signatureMethod,
         consent: true,
         consent_version: "2026-10-29",
         signed_at: now,
@@ -388,6 +393,7 @@ Deno.serve(async (request) => {
       if (body.consent !== true)
         fail("Lichen Wang must consent to signing this document.");
       const companyPng = signaturePng(body.signature);
+      const companyMethod = signatureMethodValue(body.signatureMethod);
       if (!["email", "share"].includes(body.delivery))
         fail("Choose email invitation or share link.");
       const delivery = body.delivery;
@@ -424,6 +430,7 @@ Deno.serve(async (request) => {
         "Lichen Wang",
         signedAt,
         "Authenticated Supabase administrator (Lichen Wang)",
+        companyMethod,
       );
       if (prepared.length > 10485760)
         fail("Prepared PDF exceeds the 10 MB storage limit.");
@@ -445,6 +452,7 @@ Deno.serve(async (request) => {
         p_recipient_name: body.recipientName.trim(),
         p_metadata: {
           name: "Lichen Wang",
+          signature_method: companyMethod,
           email: "readyreadymotors9999@gmail.com",
           consent: true,
           consent_version: "2026-10-29",

@@ -75,6 +75,7 @@ test("server-generated PDF preserves rotated pages, adds signature/date and cert
       .map((item) => item.str)
       .join(" ");
     assert.match(certificate, /Test Signer/);
+    assert.match(certificate, /Signature method: drawn/);
     assert.match(certificate, /123@qq.com/);
     assert.match(certificate, /Input PDF SHA-256/);
     assert.notEqual(await sha256(original), await sha256(bytes));
@@ -139,6 +140,7 @@ test("recipient completion preserves the company signature and both certificates
     "Lichen Wang",
     "2026-10-29T12:00:00Z",
     "Authenticated administrator",
+    "typed",
   );
   const signed = await generateSignedPdf(
     prepared,
@@ -181,6 +183,7 @@ test("recipient completion preserves the company signature and both certificates
         .map((i) => i.str)
         .join(" ");
     assert.match(first, /Lichen Wang/);
+    assert.match(first, /Signature method: typed/);
     assert.match(first, /Authenticated administrator/);
     assert.match(second, /Test Recipient/);
   } finally {

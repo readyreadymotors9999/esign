@@ -146,6 +146,9 @@ for (const delivery of ["share", "email"])
         ).toHaveLength(2);
         expect(b.signature).toMatch(/^data:image\/png;base64,/);
         expect(b.consent).toBe(true);
+        expect(b.signatureMethod).toBe(
+          delivery === "share" ? "typed" : "drawn",
+        );
         expect(b.delivery).toBe(delivery);
         sent = true;
         doc.status = "sent";
@@ -201,7 +204,15 @@ for (const delivery of ["share", "email"])
       .locator(".pdf-page")
       .nth(1)
       .click({ position: { x: 80, y: 220 } });
-    await draw(page);
+    if (delivery === "share") {
+      await page
+        .getByRole("button", { name: "Type signature", exact: true })
+        .click();
+      await expect(page.getByLabel("Type your signature name")).toHaveValue(
+        "Lichen Wang",
+      );
+      await expect(page.getByLabel("Typed signature preview")).toBeVisible();
+    } else await draw(page);
     await page.getByRole("checkbox").check();
     await page.getByLabel("Recipient first name").fill("Test");
     await page.getByLabel("Recipient last name").fill("Recipient");
@@ -235,66 +246,85 @@ for (const delivery of ["share", "email"])
       fullPage: true,
     });
   });
-test("mobile recipient signs prepared PDF and cannot reuse the link", async ({
-  page,
-}) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  const bytes = await fixture();
-  let completed = false;
-  await page.route("**/fixture.pdf", (r) =>
-    r.fulfill({ contentType: "application/pdf", body: bytes }),
-  );
-  await page.route("https://test.supabase.co/**", async (r) => {
-    const b = r.request().postDataJSON();
-    if (b.action === "session")
-      return completed
-        ? r.fulfill({
-            status: 410,
-            json: {
-              error: "This signing link is expired, completed, or unavailable.",
-            },
-          })
-        : r.fulfill({
-            json: {
-              title: "Vehicle purchase agreement",
-              email: "123456@qq.com",
-              recipient_name: "Test Recipient",
-              fields: recipientFields,
-              expires_at: new Date(Date.now() + 3600000).toISOString(),
-              url: "/fixture.pdf",
-            },
-          });
-    if (b.action === "complete") {
-      expect(b.consent).toBe(true);
-      expect(b.name).toBe("Test Recipient");
-      expect(b.signature).toMatch(/^data:image\/png;base64,/);
-      completed = true;
-      return r.fulfill({ json: { completed: true } });
-    }
-    return r.fulfill({ status: 400, json: { error: "Unexpected action" } });
+for (const method of ["drawn", "typed"])
+  test(`mobile recipient uses ${method} signature and cannot reuse the link`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const bytes = await fixture();
+    let completed = false;
+    await page.route("**/fixture.pdf", (r) =>
+      r.fulfill({ contentType: "application/pdf", body: bytes }),
+    );
+    await page.route("https://test.supabase.co/**", async (r) => {
+      const b = r.request().postDataJSON();
+      if (b.action === "session")
+        return completed
+          ? r.fulfill({
+              status: 410,
+              json: {
+                error:
+                  "This signing link is expired, completed, or unavailable.",
+              },
+            })
+          : r.fulfill({
+              json: {
+                title: "Vehicle purchase agreement",
+                email: "123456@qq.com",
+                recipient_name: "Test Recipient",
+                fields: recipientFields,
+                expires_at: new Date(Date.now() + 3600000).toISOString(),
+                url: "/fixture.pdf",
+              },
+            });
+      if (b.action === "complete") {
+        expect(b.consent).toBe(true);
+        expect(b.signatureMethod).toBe(method);
+        expect(b.name).toBe("Test Recipient");
+        expect(b.signature).toMatch(/^data:image\/png;base64,/);
+        completed = true;
+        return r.fulfill({ json: { completed: true } });
+      }
+      return r.fulfill({ status: 400, json: { error: "Unexpected action" } });
+    });
+    const link = `/#/sign/${"a".repeat(64)}`;
+    await page.goto(link);
+    await expect(
+      page.getByRole("heading", { name: "Vehicle purchase agreement" }),
+    ).toBeVisible();
+    await expect(page.locator(".pdf-page")).toHaveCount(2);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.getByLabel("Full legal name")).toHaveValue(
+      "Test Recipient",
+    );
+    if (method === "typed") {
+      await page
+        .getByRole("button", { name: "Type signature", exact: true })
+        .click();
+      await expect(page.getByLabel("Type your signature name")).toHaveValue(
+        "Test Recipient",
+      );
+    } else await draw(page);
+    await page.getByRole("checkbox").check();
+    // Clearing is a non-submit action and invalidates both signature modes.
+    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Agree & sign document" }),
+    ).toBeDisabled();
+    expect(completed).toBe(false);
+    if (method === "typed")
+      await page.getByLabel("Type your signature name").fill("Test Recipient");
+    else await draw(page);
+    await page.getByRole("button", { name: "Agree & sign document" }).click();
+    await expect(
+      page.getByRole("heading", { name: "You’re all signed." }),
+    ).toBeVisible();
+    expect(completed).toBe(true);
+    await page.goto(link);
+    await expect(page.getByRole("alert")).toContainText(
+      "expired, completed, or unavailable",
+    );
   });
-  const link = `/#/sign/${"a".repeat(64)}`;
-  await page.goto(link);
-  await expect(
-    page.getByRole("heading", { name: "Vehicle purchase agreement" }),
-  ).toBeVisible();
-  await expect(page.locator(".pdf-page")).toHaveCount(2);
-  await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByLabel("Full legal name")).toHaveValue(
-    "Test Recipient",
-  );
-  await draw(page);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Agree & sign document" }).click();
-  await expect(
-    page.getByRole("heading", { name: "You’re all signed." }),
-  ).toBeVisible();
-  expect(completed).toBe(true);
-  await page.goto(link);
-  await expect(page.getByRole("alert")).toContainText(
-    "expired, completed, or unavailable",
-  );
-});
 test("Google Docs import uses OAuth export and a custom filename", async ({
   page,
 }) => {

@@ -8,6 +8,7 @@ import {
   escapeHtml,
   twoPartyFields,
   signaturePng,
+  signatureMethodValue,
 } from "../supabase/functions/_shared/validation.ts";
 const field = {
   page: 2,
@@ -112,4 +113,12 @@ test("signature payloads reject malformed PNGs and wrong canvas dimensions", () 
       "data:image/png;base64," + Buffer.from(bytes).toString("base64"),
     ),
   );
+});
+
+test("signature method is recorded explicitly and rejects unsupported values", () => {
+  assert.equal(signatureMethodValue("typed"), "typed");
+  assert.equal(signatureMethodValue("drawn"), "drawn");
+  assert.equal(signatureMethodValue(undefined), "drawn");
+  for (const value of ["uploaded", "", null, {}])
+    assert.throws(() => signatureMethodValue(value));
 });

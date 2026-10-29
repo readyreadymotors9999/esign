@@ -4,7 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import { api, configured, supabase } from "./api";
 import Admin from "./Admin";
 import { Pdf } from "./Pdf";
-import { Signature } from "./Signature";
+import { Signature, type SignatureMethod } from "./Signature";
 import "./style.css";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -139,6 +139,7 @@ function Signer({ token }: { token: string }) {
   const [data, setData] = useState<any>(),
     [error, setError] = useState(""),
     [signature, setSignature] = useState(""),
+    [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("drawn"),
     [consent, setConsent] = useState(false),
     [name, setName] = useState(""),
     [busy, setBusy] = useState(false),
@@ -181,7 +182,13 @@ function Signer({ token }: { token: string }) {
               setBusy(true);
               setError("");
               try {
-                await api("complete", { token, signature, name, consent });
+                await api("complete", {
+                  token,
+                  signature,
+                  signatureMethod,
+                  name,
+                  consent,
+                });
                 setDone(true);
                 location.replace("#/complete");
               } catch (e) {
@@ -202,7 +209,11 @@ function Signer({ token }: { token: string }) {
               />
             </label>
             <label>Your signature</label>
-            <Signature onChange={setSignature} />
+            <Signature
+              defaultName={name}
+              onChange={setSignature}
+              onMethodChange={setSignatureMethod}
+            />
             <label className="consent">
               <input
                 type="checkbox"

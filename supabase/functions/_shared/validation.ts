@@ -147,3 +147,10 @@ export function signaturePng(value: unknown): Uint8Array {
     throw new ValidationError("Invalid signature dimensions.");
   return png;
 }
+
+export function signatureMethodValue(value: unknown): "drawn" | "typed" {
+  if (value === undefined) return "drawn"; // Existing clients remain compatible.
+  if (value !== "drawn" && value !== "typed")
+    throw new ValidationError("Choose a typed or drawn signature.");
+  return value;
+}

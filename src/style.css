@@ -636,3 +636,18 @@ select {
     width: 100%;
   }
 }
+.signature-methods {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.signature-methods button {
+  font-size: 13px;
+}
+.signature-pad.typed {
+  cursor: default;
+  touch-action: auto;
+}
+.signature-widget > label {
+  margin: 12px 0;
+}

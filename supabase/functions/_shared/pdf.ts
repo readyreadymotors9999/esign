@@ -18,6 +18,7 @@ export async function generateSignedPdf(
   name: string,
   now: string,
   authentication = "Possession of a private signing link",
+  signatureMethod: "drawn" | "typed" = "drawn",
 ): Promise<Uint8Array> {
   const pdf = await PDFDocument.load(source);
   const fields = validateFields(doc.fields, pdf.getPageCount());
@@ -66,6 +67,7 @@ export async function generateSignedPdf(
     `Signed at (UTC): ${now}`,
     `Recipient: ${email}`,
     `Signer: ${name}`,
+    `Signature method: ${signatureMethod}`,
     "Consent: agreed to electronic records and a binding signature.",
     `Authentication: ${authentication}.`,
     `Input PDF SHA-256: ${await sha256(source)}`,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, supabase, type Document, type Field } from "./api";
 import { Pdf } from "./Pdf";
-import { Signature } from "./Signature";
+import { Signature, type SignatureMethod } from "./Signature";
 import { prepareGoogleImport } from "./google";
 type Recipient = {
   id: string;
@@ -28,6 +28,8 @@ export default function Admin() {
     [first, setFirst] = useState(""),
     [last, setLast] = useState(""),
     [signature, setSignature] = useState(""),
+    [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("drawn"),
+    [signatureVersion, setSignatureVersion] = useState(0),
     [consent, setConsent] = useState(false),
     [delivery, setDelivery] = useState<"email" | "share">("share"),
     [share, setShare] = useState(""),
@@ -64,6 +66,8 @@ export default function Admin() {
     setAudit(data.audit);
     setRename(data.document.title);
     setSignature("");
+    setSignatureMethod("drawn");
+    setSignatureVersion((v) => v + 1);
     setConsent(false);
   }
   async function upload(blob: Blob) {
@@ -98,6 +102,7 @@ export default function Admin() {
       email,
       recipientName: `${first} ${last}`.trim(),
       signature,
+      signatureMethod,
       consent,
       delivery,
     });
@@ -395,7 +400,12 @@ export default function Admin() {
                       Sign in with this approved admin email to sign as Lichen.
                     </small>
                   </div>
-                  <Signature key={selected.id} onChange={setSignature} />
+                  <Signature
+                    key={`${selected.id}-${signatureVersion}`}
+                    defaultName="Lichen Wang"
+                    onChange={setSignature}
+                    onMethodChange={setSignatureMethod}
+                  />
                   <label className="consent">
                     <input
                       type="checkbox"
