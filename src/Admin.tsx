@@ -31,7 +31,7 @@ export default function Admin() {
     [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("drawn"),
     [signatureVersion, setSignatureVersion] = useState(0),
     [consent, setConsent] = useState(false),
-    [delivery, setDelivery] = useState<"email" | "share">("share"),
+    [delivery, setDelivery] = useState<"email" | "share">("email"),
     [share, setShare] = useState(""),
     [pdfReady, setPdfReady] = useState(false);
   async function refresh() {
