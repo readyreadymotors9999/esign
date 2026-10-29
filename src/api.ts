@@ -13,6 +13,7 @@ export type Field = {
   width: number;
   height: number;
   type: "signature" | "date";
+  signer?: "company" | "recipient";
 };
 export type Document = {
   id: string;
@@ -20,6 +21,7 @@ export type Document = {
   status: string;
   created_at: string;
   fields: Field[];
+  recipient_name?: string;
 };
 export async function api<T = any>(
   action: string,

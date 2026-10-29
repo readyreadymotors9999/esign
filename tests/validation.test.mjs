@@ -6,6 +6,8 @@ import {
   tokenValue,
   placement,
   escapeHtml,
+  twoPartyFields,
+  signaturePng,
 } from "../supabase/functions/_shared/validation.ts";
 const field = {
   page: 2,
@@ -86,3 +88,28 @@ test("email HTML escapes document titles and links", () =>
     escapeHtml('<img src="x">&'),
     "&lt;img src=&quot;x&quot;&gt;&amp;",
   ));
+
+test("two-party layouts require signature/date for both people and preserve ownership", () => {
+  const fields = ["company", "recipient"].flatMap((signer) =>
+    ["signature", "date"].map((type) => ({ ...field, signer, type })),
+  );
+  assert.deepEqual(twoPartyFields(fields, 2), fields);
+  assert.throws(() => twoPartyFields(fields.slice(1), 2));
+  assert.throws(() =>
+    twoPartyFields([...fields, { ...field, signer: "unknown" }], 2),
+  );
+  assert.throws(() => twoPartyFields([field], 2));
+});
+test("signature payloads reject malformed PNGs and wrong canvas dimensions", () => {
+  assert.throws(() => signaturePng("data:image/png;base64,not-a-png"));
+  assert.throws(() => signaturePng("data:image/jpeg;base64,AAAA"));
+  const bytes = new Uint8Array(33);
+  bytes.set([137, 80, 78, 71, 13, 10, 26, 10]);
+  new DataView(bytes.buffer).setUint32(16, 1);
+  new DataView(bytes.buffer).setUint32(20, 240);
+  assert.throws(() =>
+    signaturePng(
+      "data:image/png;base64," + Buffer.from(bytes).toString("base64"),
+    ),
+  );
+});

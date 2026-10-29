@@ -18,6 +18,7 @@ export function Pdf({
 }) {
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
   const [error, setError] = useState("");
+  const [signer, setSigner] = useState<"company" | "recipient">("company");
   const [type, setType] = useState<"signature" | "date">("signature");
   const rendered = useRef(new Set<number>());
   useEffect(() => {
@@ -57,6 +58,19 @@ export function Pdf({
     <div>
       {place && (
         <div className="toolbar">
+          <label className="field-signer">
+            Field signer
+            <select
+              aria-label="Field signer"
+              value={signer}
+              onChange={(e) =>
+                setSigner(e.target.value as "company" | "recipient")
+              }
+            >
+              <option value="company">Lichen Wang</option>
+              <option value="recipient">Recipient</option>
+            </select>
+          </label>
           <span>Place field</span>
           <button
             className={type === "signature" ? "active" : "secondary"}
@@ -82,7 +96,7 @@ export function Pdf({
             pdf={pdf}
             page={i + 1}
             fields={fields}
-            place={place}
+            place={place ? (f) => place({ ...f, signer }) : undefined}
             remove={remove}
             type={type}
             onRendered={pageReady}
@@ -169,7 +183,7 @@ function Page({
           f.page === page && (
             <button
               key={i}
-              className={`field ${f.type}`}
+              className={`field ${f.type} ${f.signer || "recipient"}`}
               style={{
                 left: `${f.x * 100}%`,
                 top: `${f.y * 100}%`,
@@ -182,7 +196,8 @@ function Page({
               }}
               aria-label={`${f.type} field on page ${page}${remove ? ", remove" : ""}`}
             >
-              {f.type === "signature" ? "✎ Sign here" : "Date (UTC)"}
+              {f.signer === "company" ? "Lichen · " : "Recipient · "}
+              {f.type === "signature" ? "Signature" : "Date (UTC)"}
             </button>
           ),
       )}

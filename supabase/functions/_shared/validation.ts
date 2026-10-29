@@ -6,6 +6,7 @@ export type Field = {
   width: number;
   height: number;
   type: "signature" | "date";
+  signer?: "company" | "recipient";
 };
 export function emailAddress(value: unknown): string {
   if (
@@ -44,6 +45,7 @@ export function validateFields(value: unknown, pageCount: number): Field[] {
       width: f.width,
       height: f.height,
       type: f.type,
+      ...(f.signer ? { signer: f.signer } : {}),
     } as Field;
   });
   if (!fields.some((f) => f.type === "signature"))
@@ -106,4 +108,42 @@ export function escapeHtml(value: string) {
         c
       ]!,
   );
+}
+
+export function twoPartyFields(value: unknown, pages: number): Field[] {
+  const fields = validateFields(value, pages);
+  if (fields.some((f) => f.signer !== "company" && f.signer !== "recipient"))
+    throw new ValidationError(
+      "Assign every field to Lichen Wang or the recipient.",
+    );
+  for (const signer of ["company", "recipient"])
+    for (const type of ["signature", "date"]) {
+      if (!fields.some((f) => f.signer === signer && f.type === type))
+        throw new ValidationError(
+          "Place a signature and date field for each signer.",
+        );
+    }
+  return fields;
+}
+export function signaturePng(value: unknown): Uint8Array {
+  if (
+    typeof value !== "string" ||
+    !value.startsWith("data:image/png;base64,") ||
+    value.length > 350000
+  )
+    throw new ValidationError("Provide a valid drawn signature.");
+  let png: Uint8Array;
+  try {
+    png = Uint8Array.from(atob(value.slice(22)), (c) => c.charCodeAt(0));
+  } catch {
+    throw new ValidationError("Invalid signature image.");
+  }
+  if (
+    png.length < 33 ||
+    ![137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => png[i] === v) ||
+    new DataView(png.buffer).getUint32(16) !== 900 ||
+    new DataView(png.buffer).getUint32(20) !== 240
+  )
+    throw new ValidationError("Invalid signature dimensions.");
+  return png;
 }

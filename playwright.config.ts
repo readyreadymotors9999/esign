@@ -16,6 +16,7 @@ export default defineConfig({
     env: {
       VITE_SUPABASE_URL: "https://test.supabase.co",
       VITE_SUPABASE_ANON_KEY: "public-test-key",
+      VITE_GOOGLE_CLIENT_ID: "test-google-client-id",
     },
   },
 });

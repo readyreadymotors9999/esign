@@ -8,6 +8,8 @@ import {
   placement,
   escapeHtml,
   ValidationError,
+  signaturePng,
+  twoPartyFields,
 } from "../_shared/validation.ts";
 const env = (key: string) => {
   const v = Deno.env.get(key);
@@ -74,15 +76,13 @@ async function audit(
   sessionId?: string,
   metadata: object = {},
 ) {
-  const { error } = await db
-    .from("audit_records")
-    .insert({
-      document_id: documentId,
-      session_id: sessionId,
-      event,
-      actor,
-      metadata,
-    });
+  const { error } = await db.from("audit_records").insert({
+    document_id: documentId,
+    session_id: sessionId,
+    event,
+    actor,
+    metadata,
+  });
   check(error);
 }
 async function sessionFor(token: unknown) {
@@ -117,28 +117,7 @@ async function complete(body: any, request: Request) {
     body.name.length > 150
   )
     fail("Your full name and electronic signature consent are required.");
-  if (
-    typeof body.signature !== "string" ||
-    !body.signature.startsWith("data:image/png;base64,") ||
-    body.signature.length > 350000
-  )
-    fail("Provide a valid drawn signature.");
-  let png: Uint8Array;
-  try {
-    png = Uint8Array.from(atob(body.signature.slice(22)), (c) =>
-      c.charCodeAt(0),
-    );
-  } catch {
-    return fail("Invalid signature image.");
-  }
-  // Accept only the fixed-size canvas PNG produced by this app; reject image bombs.
-  if (
-    png.length < 33 ||
-    ![137, 80, 78, 71, 13, 10, 26, 10].every((v, i) => png[i] === v) ||
-    new DataView(png.buffer).getUint32(16) !== 900 ||
-    new DataView(png.buffer).getUint32(20) !== 240
-  )
-    fail("Invalid signature dimensions.");
+  const png = signaturePng(body.signature);
   const hash = await digest(tokenValue(body.token));
   const { data: s, error } = await db.rpc("claim_signing_session", {
     p_hash: hash,
@@ -150,12 +129,12 @@ async function complete(body: any, request: Request) {
     finished = false;
   try {
     const doc = await documentFor(s.document_id);
-    const source = await original(doc.original_path);
+    const source = await original(doc.prepared_path || doc.original_path);
     const now = new Date().toISOString();
     const bytes = await generateSignedPdf(
       source,
       png,
-      doc,
+      { ...doc, fields: doc.fields.filter((f: any) => f.signer !== "company") },
       s.id,
       s.recipient_email,
       body.name.trim(),
@@ -179,7 +158,8 @@ async function complete(body: any, request: Request) {
         consent_version: "2026-10-29",
         signed_at: now,
         sha256: await digest(bytes),
-        original_sha256: await digest(source),
+        input_sha256: await digest(source),
+        original_sha256: await digest(await original(doc.original_path)),
         ip: request.headers.get("x-forwarded-for")?.slice(0, 200) || null,
         user_agent: request.headers.get("user-agent")?.slice(0, 300) || null,
       },
@@ -231,9 +211,10 @@ Deno.serve(async (request) => {
       return json({
         title: doc.title,
         email: s.recipient_email,
-        fields: doc.fields,
+        fields: doc.fields.filter((f: any) => f.signer !== "company"),
+        recipient_name: doc.recipient_name,
         expires_at: s.expires_at,
-        url: await signedUrl(doc.original_path),
+        url: await signedUrl(doc.prepared_path || doc.original_path),
       });
     }
     if (body.action === "complete") return json(await complete(body, request));
@@ -264,6 +245,36 @@ Deno.serve(async (request) => {
       check(error);
       return json({ documents: data });
     }
+    if (body.action === "recipients") {
+      const { data, error } = await db
+        .from("recipients")
+        .select("*")
+        .eq("owner_id", user.id)
+        .order("first_name");
+      check(error);
+      return json({ recipients: data });
+    }
+    if (body.action === "save_recipient") {
+      const email = emailAddress(body.email);
+      for (const value of [body.firstName, body.lastName])
+        if (typeof value !== "string" || value.length > 100)
+          fail("Use names up to 100 characters.");
+      const { data, error } = await db
+        .from("recipients")
+        .upsert(
+          {
+            owner_id: user.id,
+            email,
+            first_name: body.firstName.trim(),
+            last_name: body.lastName.trim(),
+          },
+          { onConflict: "owner_id,email" },
+        )
+        .select()
+        .single();
+      check(error);
+      return json({ recipient: data });
+    }
     if (body.action === "create") {
       if (
         typeof body.title !== "string" ||
@@ -273,14 +284,12 @@ Deno.serve(async (request) => {
         fail("Use a filename between 1 and 200 characters.");
       const id = crypto.randomUUID(),
         path = `${user.id}/${id}/original.pdf`;
-      const { error } = await db
-        .from("documents")
-        .insert({
-          id,
-          owner_id: user.id,
-          title: body.title,
-          original_path: path,
-        });
+      const { error } = await db.from("documents").insert({
+        id,
+        owner_id: user.id,
+        title: body.title,
+        original_path: path,
+      });
       check(error);
       return json({ id, path });
     }
@@ -290,6 +299,26 @@ Deno.serve(async (request) => {
     )
       fail("Invalid document ID.");
     const doc = await documentFor(body.documentId, user.id);
+    if (body.action === "rename") {
+      if (doc.status !== "draft")
+        fail("Only draft documents can be renamed.", 409);
+      if (
+        typeof body.title !== "string" ||
+        !body.title.trim() ||
+        body.title.length > 200
+      )
+        fail("Use a filename between 1 and 200 characters.");
+      const { data, error } = await db
+        .from("documents")
+        .update({ title: body.title.trim() })
+        .eq("id", doc.id)
+        .eq("status", "draft")
+        .select("id")
+        .maybeSingle();
+      check(error);
+      if (!data) fail("Document changed. Refresh before renaming.", 409);
+      return json({ ok: true });
+    }
     if (body.action === "uploaded") {
       if (doc.status !== "uploading") fail("Document is already uploaded.");
       const bytes = await original(doc.original_path);
@@ -323,7 +352,11 @@ Deno.serve(async (request) => {
         url:
           doc.status === "uploading"
             ? null
-            : await signedUrl(doc.signed_path || doc.original_path),
+            : await signedUrl(
+                doc.signed_path ||
+                  (doc.status === "sent" ? doc.prepared_path : null) ||
+                  doc.original_path,
+              ),
       });
     }
     if (body.action === "download") {
@@ -347,33 +380,95 @@ Deno.serve(async (request) => {
     if (body.action === "send") {
       if (doc.status !== "draft")
         fail("Only draft documents can be sent.", 409);
+      if (user.email?.toLowerCase() !== "readyreadymotors9999@gmail.com")
+        fail(
+          "Sign in as readyreadymotors9999@gmail.com to sign as Lichen Wang.",
+          403,
+        );
+      if (body.consent !== true)
+        fail("Lichen Wang must consent to signing this document.");
+      const companyPng = signaturePng(body.signature);
+      if (!["email", "share"].includes(body.delivery))
+        fail("Choose email invitation or share link.");
+      const delivery = body.delivery;
+      if (
+        typeof body.recipientName !== "string" ||
+        !body.recipientName.trim() ||
+        body.recipientName.length > 150
+      )
+        fail("Enter the recipient's full name.");
       const email = emailAddress(body.email),
         source = await original(doc.original_path);
       const pdf = await PDFDocument.load(source),
-        fields = validateFields(body.fields, pdf.getPageCount());
+        fields = twoPartyFields(body.fields, pdf.getPageCount());
       // Verify all fields map to valid page rotations before sending an invitation.
       for (const f of fields) {
         const p = pdf.getPage(f.page - 1);
         placement(f, p.getCropBox(), p.getRotation().angle);
       }
-      const resend = env("RESEND_API_KEY"),
-        from = env("EMAIL_FROM");
+      // Share links do not require an email provider at all.
+      const resend = delivery === "email" ? env("RESEND_API_KEY") : "",
+        from = delivery === "email" ? env("EMAIL_FROM") : "";
       const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map((v) => v.toString(16).padStart(2, "0"))
         .join("");
-      const { data: sid, error } = await db.rpc("issue_signing_session", {
+      const signedAt = new Date().toISOString(),
+        attempt = crypto.randomUUID();
+      const preparedPath = `${user.id}/${doc.id}/prepared-${attempt}.pdf`;
+      const prepared = await generateSignedPdf(
+        source,
+        companyPng,
+        { id: doc.id, fields: fields.filter((f) => f.signer === "company") },
+        attempt,
+        "readyreadymotors9999@gmail.com",
+        "Lichen Wang",
+        signedAt,
+        "Authenticated Supabase administrator (Lichen Wang)",
+      );
+      if (prepared.length > 10485760)
+        fail("Prepared PDF exceeds the 10 MB storage limit.");
+      const { error: preparedError } = await db.storage
+        .from("documents")
+        .upload(preparedPath, prepared, {
+          contentType: "application/pdf",
+          upsert: false,
+        });
+      check(preparedError);
+      const { data: sid, error } = await db.rpc("issue_prepared_session", {
         p_document: doc.id,
         p_owner: user.id,
         p_email: email,
         p_hash: await digest(token),
         p_fields: fields,
+        p_path: preparedPath,
+        p_delivery: delivery,
+        p_recipient_name: body.recipientName.trim(),
+        p_metadata: {
+          name: "Lichen Wang",
+          email: "readyreadymotors9999@gmail.com",
+          consent: true,
+          consent_version: "2026-10-29",
+          signed_at: signedAt,
+          sha256: await digest(prepared),
+          original_sha256: await digest(source),
+          prepared_path: preparedPath,
+          ip: request.headers.get("x-forwarded-for")?.slice(0, 200) || null,
+        },
       });
-      if (error)
+      if (error) {
+        // Leave an orphan on an ambiguous transaction response: never delete
+        // a PDF that a committed invitation may already reference.
         fail(
-          "Document changed or already has an invitation. Refresh before retrying.",
+          "Document changed or invitation could not be confirmed. Refresh before retrying.",
           409,
         );
+      }
       const link = `${appUrl.replace(/\/$/, "")}/#/sign/${token}`;
+      if (delivery === "share")
+        return json({
+          link,
+          expires_at: new Date(Date.now() + 72 * 3600000).toISOString(),
+        });
       let sent = false;
       try {
         const response = await fetch("https://api.resend.com/emails", {

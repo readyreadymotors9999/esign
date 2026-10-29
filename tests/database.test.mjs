@@ -27,6 +27,15 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
         "utf8",
       ),
     );
+    await db.exec(
+      await readFile(
+        new URL(
+          "../supabase/migrations/202610290002_two_party.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
     await db.exec(`insert into public.admins values ('${admin}');
  insert into public.documents(id,owner_id,title,original_path) values ('${doc}','${admin}','Contract.pdf','${admin}/${doc}/original.pdf');`);
     await db.exec(
@@ -106,10 +115,49 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
     await db.exec(`select public.revoke_signing_session('${doc}','${admin}');`);
     const final = (
       await db.query(
-        `select public.issue_signing_session($1,$2,$3,$4,$5) as sid`,
-        [doc, admin, "123@qq.com", "final", fields],
+        `select public.issue_prepared_session($1,$2,$3,$4,$5,$6,$7,$8,$9) as sid`,
+        [
+          doc,
+          admin,
+          "123@qq.com",
+          "final",
+          fields,
+          "prepared.pdf",
+          JSON.stringify({
+            signed_at: "2026-10-29T12:00:00Z",
+            name: "Lichen Wang",
+            consent: true,
+          }),
+          "share",
+          "Test Recipient",
+        ],
       )
     ).rows[0].sid;
+    const prepared = (
+      await db.query(
+        `select prepared_path,recipient_name,company_signed_at from public.documents where id='${doc}'`,
+      )
+    ).rows[0];
+    assert.equal(prepared.prepared_path, "prepared.pdf");
+    assert.equal(prepared.recipient_name, "Test Recipient");
+    assert.ok(prepared.company_signed_at);
+    assert.equal(
+      (
+        await db.query(
+          `select * from public.audit_records where event='company_signed'`,
+        )
+      ).rows.length,
+      1,
+    );
+    assert.equal(
+      (
+        await db.query(
+          `select delivery from public.signing_sessions where id=$1`,
+          [final],
+        )
+      ).rows[0].delivery,
+      "share",
+    );
     await db.exec(`select public.claim_signing_session('final');`);
     await assert.rejects(
       db.exec(`select public.claim_signing_session('final')`),
@@ -148,6 +196,30 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
       ).rows.length,
       1,
     );
+    await db.query(
+      `insert into public.recipients(owner_id,email,first_name,last_name) values ($1,$2,$3,$4)`,
+      [admin, "123@qq.com", "Test", "Recipient"],
+    );
+    await db.exec(
+      `set role authenticated; select set_config('request.jwt.claim.sub','${outsider}',false);`,
+    );
+    assert.equal(
+      (await db.query("select * from public.recipients")).rows.length,
+      0,
+    );
+    await assert.rejects(
+      db.exec(
+        `insert into public.recipients(owner_id,email) values ('${outsider}','attacker@example.com')`,
+      ),
+    );
+    await db.exec(
+      `select set_config('request.jwt.claim.sub','${admin}',false);`,
+    );
+    assert.equal(
+      (await db.query("select * from public.recipients")).rows.length,
+      1,
+    );
+    await db.exec("reset role");
     await db.exec(`set role anon;`);
     await assert.rejects(db.exec("select * from public.signing_sessions"));
     assert.equal(
