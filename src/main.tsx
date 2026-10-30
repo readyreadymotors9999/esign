@@ -5,6 +5,7 @@ import { api, configured, supabase } from "./api";
 import Admin from "./Admin";
 import { Pdf } from "./Pdf";
 import { Signature, type SignatureMethod } from "./Signature";
+import companyLogo from "../r_logo.jpg";
 import "./style.css";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -26,7 +27,13 @@ function App() {
     <>
       <header>
         <a href="#" className="brand">
-          <span className="brand-icon">RR</span>
+          <img
+            className="brand-logo"
+            src={companyLogo}
+            alt="Ready Ready Motors company logo"
+            width={54}
+            height={54}
+          />
           <span>
             READY READY<small>MOTORS, INC.</small>
           </span>
