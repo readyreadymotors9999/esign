@@ -470,12 +470,17 @@ export function Pdf({
             >
               +
             </button>
+            <span className="zoom-value" aria-label="Current PDF zoom">
+              {Math.round(zoom * 100)}%
+            </span>
             <button
               type="button"
+              className="zoom-reset"
+              title="Reset to 100%"
               aria-label="Reset PDF zoom to 100%"
               onClick={() => setPreviewZoom(1)}
             >
-              {Math.round(zoom * 100)}%
+              ↺ 100%
             </button>
           </div>,
           zoomHost,
@@ -488,6 +493,7 @@ export function Pdf({
             <Page
               key={i}
               pdf={pdf}
+              placementSigner={signer}
               zoom={zoom}
               page={i + 1}
               fields={fields}
@@ -549,6 +555,7 @@ export function Pdf({
 }
 function Page({
   pdf,
+  placementSigner,
   zoom,
   page,
   fields,
@@ -569,6 +576,7 @@ function Page({
   signerNames,
 }: {
   pdf: pdfjs.PDFDocumentProxy;
+  placementSigner: "company" | "recipient";
   zoom: number;
   page: number;
   fields: Field[];
@@ -737,7 +745,7 @@ function Page({
         <div
           aria-hidden="true"
           data-testid="field-placement-preview"
-          className={`field-placement-preview ${type}`}
+          className={`field-placement-preview ${type} ${placementSigner}`}
           style={{
             left: `${hover.x * 100}%`,
             top: `${hover.y * 100}%`,

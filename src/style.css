@@ -1679,3 +1679,47 @@ summary:focus-visible,
   background: #d8ebe3;
   color: #183a2c;
 }
+/* Field colours belong to signers, not field types. */
+.pdf-page .company {
+  --signer-border: #628bc8;
+  --signer-ink: #325d9c;
+  --signer-fill: #dce8ff80;
+}
+.pdf-page .recipient {
+  --signer-border: #299579;
+  --signer-ink: #166b59;
+  --signer-fill: #d8efe580;
+}
+.pdf-page .field.company,
+.pdf-page .field.recipient,
+.pdf-page .field-placement-preview.company,
+.pdf-page .field-placement-preview.recipient {
+  border-color: var(--signer-border);
+  color: var(--signer-ink);
+  background: var(--signer-fill);
+}
+.pdf-page .field.selected-field {
+  outline-color: var(--signer-border);
+}
+.pdf-page .field .field-controls select {
+  border-color: var(--signer-border);
+  color: var(--signer-ink);
+  background-color: var(--signer-fill);
+}
+.pdf-page .field .field-settings {
+  background: var(--signer-ink);
+}
+.pdf-zoom-controls .zoom-value {
+  min-width: 40px;
+  text-align: center;
+  font-size: 13px;
+  color: #42565c;
+  font-variant-numeric: tabular-nums;
+}
+.pdf-zoom-controls .zoom-reset {
+  border-left: 1px solid #dce3e0;
+  border-radius: 0;
+  margin-left: 2px;
+  padding-left: 9px;
+  white-space: nowrap;
+}

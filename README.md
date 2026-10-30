@@ -337,3 +337,9 @@ PDF rendering code is split out of the initial dashboard bundle. Once the list a
 The dashboard schedules PDF viewer preparation after its list is ready, using browser idle time (with a short timeout fallback). Hovering or focusing a document also starts preparation. Module requests are shared, so these hints and the eventual document open do not download the renderer repeatedly. Preparation also starts the PDF worker; opened documents share that worker explicitly, while each document's loading task and private data are destroyed when its viewer closes. A full browser reload starts a new worker. Failed worker initialization is discarded so a later open can retry.
 
 Preparation downloads only public application code, never document PDFs or signing URLs. The initial dashboard still benefits from code splitting, while normal document opens can reuse already prepared code and the worker. Actual PDF download, decoding and page drawing still depend on file size and device/network conditions. No Supabase deployment is needed.
+
+### Signer field colours and zoom reset
+
+Field border/tint colours belong to their signer, consistently across Signature and Date: company fields are blue and recipient fields are green. Reassigning a field changes its colour immediately. Placement outlines and selected-field controls follow the same signer palette; actual signature images and finalized PDFs keep their normal signing ink.
+
+The bottom-right zoom bar shows the current scale separately from an explicit **↺ 100%** button, which resets the preview in one click on desktop or mobile. These are frontend changes and need no Supabase deployment.

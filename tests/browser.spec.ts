@@ -317,6 +317,27 @@ test.describe("High density PDF preview", () => {
         .locator(".pdf-page")
         .nth(1)
         .click({ position: { x: 80, y: 220 } });
+      const companyColor = await page
+        .locator(".field.company.signature")
+        .evaluate((el) => getComputedStyle(el).borderColor);
+      const recipientColor = await page
+        .locator(".field.recipient.signature")
+        .evaluate((el) => getComputedStyle(el).borderColor);
+      expect(companyColor).not.toBe(recipientColor);
+      await expect(page.locator(".field.company.date")).toHaveCSS(
+        "border-color",
+        companyColor,
+      );
+      await expect(page.locator(".field.recipient.date")).toHaveCSS(
+        "border-color",
+        recipientColor,
+      );
+      await expect(page.locator(".field.company.signature")).toHaveCSS(
+        "background-color",
+        await page
+          .locator(".field.company.date")
+          .evaluate((el) => getComputedStyle(el).backgroundColor),
+      );
       const field = page.getByRole("button", {
         name: "Open company signature field 1 on page 1",
         exact: true,
@@ -434,8 +455,14 @@ test.describe("High density PDF preview", () => {
         .getByRole("button", { name: "Close signature dialog", exact: true })
         .click();
       await page.getByLabel("Signer for field 5").selectOption("recipient");
+      await expect(
+        page.locator('.field:has(select[aria-label="Signer for field 5"])'),
+      ).toHaveCSS("border-color", recipientColor);
       await expect(page.locator(".field-content img")).toHaveCount(1);
       await page.getByLabel("Signer for field 5").selectOption("company");
+      await expect(
+        page.locator('.field:has(select[aria-label="Signer for field 5"])'),
+      ).toHaveCSS("border-color", companyColor);
       await expect(page.locator(".field-content img")).toHaveCount(2);
       await page
         .getByRole("button", { name: "Field settings 5", exact: true })
