@@ -45,6 +45,15 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
         "utf8",
       ),
     );
+    await db.exec(
+      await readFile(
+        new URL(
+          "../supabase/migrations/202610300002_reopen_signing.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
     await db.exec(`insert into public.admins values ('${admin}');
  insert into public.documents(id,owner_id,title,original_path) values ('${doc}','${admin}','Contract.pdf','${admin}/${doc}/original.pdf');`);
     await db.exec(
@@ -220,11 +229,47 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
     await assert.rejects(
       db.exec(`select public.claim_signing_session('final')`),
     );
+    await db.exec(`select public.revoke_signing_session('${doc}','${admin}')`);
+    const cleared = (
+      await db.query(
+        `select status,prepared_path,company_signed_at,signed_path from public.documents where id='${doc}'`,
+      )
+    ).rows[0];
+    assert.deepEqual(cleared, {
+      status: "draft",
+      prepared_path: null,
+      company_signed_at: null,
+      signed_path: null,
+    });
     await assert.rejects(
-      db.exec(`select public.revoke_signing_session('${doc}','${admin}')`),
+      db.query(`select public.finish_signing_session($1,$2,$3)`, [
+        final,
+        "stale.pdf",
+        "{}",
+      ]),
     );
-    await db.query(`select public.finish_signing_session($1,$2,$3)`, [
+    await assert.rejects(
+      db.exec(`select public.claim_signing_session('final')`),
+    );
+    const replacement = (
+      await db.query(
+        `select public.issue_signing_session($1,$2,$3,$4,$5) as sid`,
+        [doc, admin, "signer@qq.com", "replacement", fields],
+      )
+    ).rows[0].sid;
+    await db.query(`select public.cancel_failed_invitation($1,$2,$3)`, [
+      doc,
+      admin,
       final,
+    ]);
+    assert.equal(
+      (await db.query(`select status from public.documents where id='${doc}'`))
+        .rows[0].status,
+      "sent",
+    );
+    await db.exec(`select public.claim_signing_session('replacement')`);
+    await db.query(`select public.finish_signing_session($1,$2,$3)`, [
+      replacement,
       "signed.pdf",
       JSON.stringify({ sha256: "abc", consent: true }),
     ]);
@@ -237,6 +282,9 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
         "overwrite.pdf",
         "{}",
       ]),
+    );
+    await assert.rejects(
+      db.exec(`select public.revoke_signing_session('${doc}','${admin}')`),
     );
     assert.equal(
       (

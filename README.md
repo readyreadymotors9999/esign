@@ -50,7 +50,7 @@ supabase link --project-ref YOUR_PROJECT_REF
 supabase db push
 ```
 
-This applies both migrations in `supabase/migrations/` (including `202610290002_two_party.sql` for recipients and prepared PDFs), creates the private `documents` bucket, tables, RLS and service-only transactional functions. Review SQL before applying to an existing project. The bucket name must be unused; this migration intentionally fails rather than silently reusing a bucket with unknown policies.
+This applies all migrations in `supabase/migrations/` (including `202610290002_two_party.sql` for recipients and prepared PDFs), creates the private `documents` bucket, tables, RLS and service-only transactional functions. Review SQL before applying to an existing project. The bucket name must be unused; this migration intentionally fails rather than silently reusing a bucket with unknown policies.
 
 In Supabase Auth:
 
@@ -201,7 +201,7 @@ GitHub **repository Settings → Secrets and variables → Actions → Variables
 
 GitHub **Settings → Pages → Source → GitHub Actions** enables frontend hosting. These repository settings require the appropriate GitHub App/owner permissions; Git push access alone does not grant them.
 
-Supabase **Edge Functions → Secrets** stores `APP_ORIGIN`, `APP_URL`, and (only for email invitations) `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Supabase supplies its service-role key to deployed Edge Functions automatically. Do not add service-role/secret keys, personal access tokens, or database passwords to frontend `VITE_*` variables. Creating the Supabase project is the first step: apply both SQL migrations, deploy the Edge Function, and enroll the admin account before live signing can work.
+Supabase **Edge Functions → Secrets** stores `APP_ORIGIN`, `APP_URL`, and (only for email invitations) `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Supabase supplies its service-role key to deployed Edge Functions automatically. Do not add service-role/secret keys, personal access tokens, or database passwords to frontend `VITE_*` variables. Creating the Supabase project is the first step: apply all SQL migrations, deploy the Edge Function, and enroll the admin account before live signing can work.
 
 The build job also targets the `github-pages` Environment. If you already added `VITE_SUPABASE_URL` under **Settings → Environments → github-pages → Environment variables** and the public `VITE_SUPABASE_ANON_KEY` under **Environment secrets**, that layout is supported. The build accepts the public key from Variables or Secrets (Variables take precedence). Treating it as a GitHub secret does not make it private in the published frontend. No service-role/secret key may be used here.
 
@@ -247,3 +247,19 @@ Dates are generated from the server clock in `America/Los_Angeles`, formatted `M
 New recipient information is automatically saved to the owner's private address book on Send. Select a saved contact to edit its name/email, and choose **Update recipient** to save immediately, or Send to save as part of that workflow. Updating by contact ID checks owner identity; an email already used by another contact returns a conflict instead of silently overwriting that contact. Contact edits do not change previously issued invitations.
 
 This update needs a fresh `esign` Edge Function deployment from the latest source for date formatting, stale-date checks and automatic contact updates. No additional SQL migration, Gmail reconnection, or new secret is required.
+
+
+### Reopen invitations and move fields
+
+Choose **Edit document & resend** on any sent, unfinished document. Confirmation invalidates its pending or in-progress signing session and clears all active signature/date values, including Lichen Wang’s. The original PDF and field layout remain editable. Accept a fresh company signature/date and Send to create a new invitation; old links cannot sign. Completed documents cannot reopen. Completion and reopening are serialized in the database; if completion commits first, editing is refused. Immutable PDF revisions and historical audit events remain private for traceability.
+
+Choose a saved recipient or enter a new contact above the field tools. The field-signer menu also lists saved contacts. Recipient fields cannot be placed until a name and email are provided. Drag existing fields to move them; a click opens the signature dialog. New signature boxes are two-thirds the previous width and half the height; date boxes are one-third the width and one-quarter the height. Existing field layouts retain their dimensions.
+
+**Deploy this update from the latest repository checkout:**
+
+```sh
+npx supabase db push
+npx supabase functions deploy esign --no-verify-jwt --use-api
+```
+
+This applies `202610300002_reopen_signing.sql` before deploying the matching function. Gmail credentials do not change. The frontend deploys automatically through GitHub Actions after push to main.

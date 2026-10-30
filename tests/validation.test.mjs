@@ -31,6 +31,16 @@ test("QQ addresses work and malformed/header-injection emails fail", () => {
 });
 test("field validation enforces pages, normalized bounds, finite values, and signature requirement", () => {
   assert.deepEqual(validateFields([field], 2), [field]);
+  const compactDate = {
+    ...field,
+    type: "date",
+    width: 0.22 / 3,
+    height: 0.065 / 4,
+  };
+  assert.equal(validateFields([field, compactDate], 2)[1].height, 0.065 / 4);
+  assert.throws(() =>
+    validateFields([field, { ...compactDate, height: 0.001 }], 2),
+  );
   for (const bad of [
     { ...field, page: 3 },
     { ...field, x: 0.9 },

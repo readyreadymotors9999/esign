@@ -22,7 +22,11 @@ export function Pdf({
   signaturePreviews = {},
   datePreviews = {},
   signerNames = {},
+  onChooseRecipient,
+  recipientChoices = [],
 }: {
+  onChooseRecipient?: (id?: string) => void;
+  recipientChoices?: { id: string; name: string; email: string }[];
   url: string;
   fields: Field[];
   place?: (field: Field) => void;
@@ -100,12 +104,29 @@ export function Pdf({
         <select
           aria-label="Field signer"
           value={signer}
-          onChange={(e) => setSigner(e.target.value as "company" | "recipient")}
+          onChange={(e) => {
+            if (e.target.value === "manage") {
+              onChooseRecipient?.();
+              return;
+            }
+            if (e.target.value.startsWith("contact:")) {
+              onChooseRecipient?.(e.target.value.slice(8));
+              setSigner("recipient");
+              return;
+            }
+            setSigner(e.target.value as "company" | "recipient");
+          }}
         >
           <option value="company">Lichen Wang</option>
-          <option value="recipient">
-            {signerNames.recipient || "Recipient"}
-          </option>
+          {signerNames.recipient && (
+            <option value="recipient">{signerNames.recipient}</option>
+          )}
+          {recipientChoices.map((r) => (
+            <option key={r.id} value={`contact:${r.id}`}>
+              {r.name} · {r.email}
+            </option>
+          ))}
+          <option value="manage">Choose / add recipient…</option>
         </select>
       </label>
       <span>Place field</span>
@@ -275,7 +296,17 @@ export function Pdf({
               pdf={pdf}
               page={i + 1}
               fields={fields}
-              place={place ? (f) => place({ ...f, signer }) : undefined}
+              place={
+                place
+                  ? (f) => {
+                      if (signer === "recipient" && !signerNames.recipient) {
+                        onChooseRecipient?.();
+                        return;
+                      }
+                      place({ ...f, signer });
+                    }
+                  : undefined
+              }
               remove={remove}
               type={type}
               onRendered={pageReady}
@@ -358,6 +389,18 @@ function Page({
   signerNames: Partial<Record<"company" | "recipient", string>>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const drag = useRef<
+    | {
+        index: number;
+        startX: number;
+        startY: number;
+        x: number;
+        y: number;
+        moved: boolean;
+      }
+    | undefined
+  >(undefined);
+  const suppressClick = useRef(false);
   const [ratio, setRatio] = useState(1.294);
   useEffect(() => {
     let cancelled = false;
@@ -391,8 +434,8 @@ function Page({
       onClick={(event) => {
         if (!place) return;
         const rect = event.currentTarget.getBoundingClientRect();
-        const width = type === "signature" ? 0.28 : 0.22,
-          height = 0.065;
+        const width = type === "signature" ? (0.28 * 2) / 3 : 0.22 / 3,
+          height = type === "signature" ? 0.065 / 2 : 0.065 / 4;
         place({
           page,
           type,
@@ -427,6 +470,7 @@ function Page({
               width: `${f.width * 100}%`,
               height: `${f.height * 100}%`,
             }}
+            onClick={(e) => e.stopPropagation()}
             role="group"
             aria-label={`${f.type} field on page ${page}`}
           >
@@ -434,14 +478,59 @@ function Page({
               type="button"
               className="field-content"
               aria-label={`Open ${owner} ${f.type} field ${i + 1} on page ${page}`}
+              onPointerDown={(e) => {
+                if (!updateField || e.button !== 0) return;
+                e.stopPropagation();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                suppressClick.current = false;
+                drag.current = {
+                  index: i,
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  x: f.x,
+                  y: f.y,
+                  moved: false,
+                };
+              }}
+              onPointerMove={(e) => {
+                const d = drag.current;
+                if (!d || d.index !== i) return;
+                const dx = e.clientX - d.startX,
+                  dy = e.clientY - d.startY;
+                if (!d.moved && Math.hypot(dx, dy) < 5) return;
+                d.moved = true;
+                const rect = e.currentTarget
+                  .closest(".pdf-page")!
+                  .getBoundingClientRect();
+                updateField?.(i, {
+                  x: Math.max(0, Math.min(1 - f.width, d.x + dx / rect.width)),
+                  y: Math.max(
+                    0,
+                    Math.min(1 - f.height, d.y + dy / rect.height),
+                  ),
+                });
+              }}
+              onPointerUp={() => {
+                suppressClick.current = !!drag.current?.moved;
+                drag.current = undefined;
+              }}
+              onPointerCancel={() => {
+                suppressClick.current = true;
+                drag.current = undefined;
+              }}
               onClick={(e) => {
                 e.stopPropagation();
+                if (suppressClick.current) {
+                  suppressClick.current = false;
+                  return;
+                }
                 onActivate(i, f);
               }}
             >
               {preview ? (
                 f.type === "signature" ? (
                   <img
+                    draggable={false}
                     src={preview}
                     alt={`${signerNames[owner] || owner} signature preview`}
                   />
@@ -451,7 +540,9 @@ function Page({
               ) : (
                 <span className="field-label">
                   {signerNames[owner] ||
-                    (owner === "company" ? "Lichen Wang" : "Recipient")}{" "}
+                    (owner === "company"
+                      ? "Lichen Wang"
+                      : "Choose signer")}{" "}
                   · {f.type === "signature" ? "Signature" : "Date"}
                 </span>
               )}
@@ -471,9 +562,9 @@ function Page({
                   }
                 >
                   <option value="company">Lichen Wang</option>
-                  <option value="recipient">
-                    {signerNames.recipient || "Recipient"}
-                  </option>
+                  {signerNames.recipient && (
+                    <option value="recipient">{signerNames.recipient}</option>
+                  )}
                 </select>
                 <button
                   type="button"

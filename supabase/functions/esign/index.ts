@@ -493,7 +493,7 @@ Deno.serve(async (request) => {
       });
       if (error)
         fail(
-          "Cannot revoke: signing may be in progress. Refresh and retry.",
+          "Cannot edit a completed document. Refresh to check its current status.",
           409,
         );
       return json({ ok: true });
@@ -617,7 +617,8 @@ Deno.serve(async (request) => {
       } finally {
         // A timed-out email may still arrive: revoke its token before allowing resend.
         if (!sent) {
-          const { error } = await db.rpc("revoke_signing_session", {
+          const { error } = await db.rpc("cancel_failed_invitation", {
+            p_session: sid,
             p_document: doc.id,
             p_owner: user.id,
           });

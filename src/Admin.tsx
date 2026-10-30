@@ -47,6 +47,7 @@ export default function Admin() {
     [editingAvailable, setEditingAvailable] = useState(false),
     [pageRangesAvailable, setPageRangesAvailable] = useState(false),
     [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const [filter, setFilter] = useState("all");
   const today = useSigningDate();
   async function refresh() {
     const data = await api("list");
@@ -144,6 +145,8 @@ export default function Admin() {
     );
   }
   const ready =
+    first.trim() &&
+    email &&
     signature &&
     consent &&
     pdfReady &&
@@ -172,8 +175,7 @@ export default function Admin() {
       {!selected && (
         <div className="heading">
           <div>
-            <div className="eyebrow">YOUR WORKSPACE</div>
-            <h1>Documents</h1>
+            <h1>Welcome back, Lichen</h1>
             <p>Prepare together. Sign with confidence.</p>
           </div>
           <div className="actions">
@@ -307,9 +309,34 @@ export default function Admin() {
         {!selected && (
           <aside className="card document-list">
             <div className="split">
-              <h2>
-                All documents <span className="count">{docs.length}</span>
-              </h2>
+              <div
+                role="tablist"
+                aria-label="Document status"
+                className="document-tabs"
+              >
+                {[
+                  ["all", "All documents"],
+                  ["draft", "Drafts"],
+                  ["sent", "Waiting for others"],
+                  ["completed", "Completed"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    role="tab"
+                    aria-selected={filter === value}
+                    onClick={() => setFilter(value)}
+                  >
+                    {label}{" "}
+                    <span className="count">
+                      {
+                        docs.filter(
+                          (d) => value === "all" || d.status === value,
+                        ).length
+                      }
+                    </span>
+                  </button>
+                ))}
+              </div>
               <button
                 className="secondary"
                 disabled={busy}
@@ -325,44 +352,39 @@ export default function Admin() {
                 <p>Upload a PDF or import a Google Doc.</p>
               </div>
             )}
-            {docs.map((doc) => (
-              <button
-                disabled={busy}
-                className="doc-row"
-                key={doc.id}
-                onClick={() =>
-                  task(async () => {
-                    setShare("");
-                    await show(doc.id);
-                    await refresh();
-                  })
-                }
-              >
-                <span className="file-icon">PDF</span>
-                <span className="doc-info">
-                  <strong>{doc.title}</strong>
-                  <small>{new Date(doc.created_at).toLocaleDateString()}</small>
-                </span>
-                <span className={`badge ${doc.status}`}>{doc.status}</span>
-              </button>
-            ))}
+            {docs.length > 0 &&
+              !docs.some((d) => filter === "all" || d.status === filter) && (
+                <p className="empty">No documents in this tab.</p>
+              )}
+            {docs
+              .filter((doc) => filter === "all" || doc.status === filter)
+              .map((doc) => (
+                <button
+                  disabled={busy}
+                  className="doc-row"
+                  key={doc.id}
+                  onClick={() =>
+                    task(async () => {
+                      setShare("");
+                      await show(doc.id);
+                      await refresh();
+                    })
+                  }
+                >
+                  <span className="file-icon">PDF</span>
+                  <span className="doc-info">
+                    <strong>{doc.title}</strong>
+                    <small>
+                      {new Date(doc.created_at).toLocaleDateString()}
+                    </small>
+                  </span>
+                  <span className={`badge ${doc.status}`}>{doc.status}</span>
+                </button>
+              ))}
           </aside>
         )}
         <section className="document-panel">
-          {!selected ? (
-            <div className="card welcome">
-              <span className="empty-icon">✎</span>
-              <h2>Two signatures. One simple flow.</h2>
-              <p>
-                Invite your recipient by email or share a private signing link.
-              </p>
-              <div className="steps">
-                <span>01 Prepare</span>
-                <span>02 Sign & date</span>
-                <span>03 Invite</span>
-              </div>
-            </div>
-          ) : (
+          {!selected ? null : (
             <div className="card editor">
               <aside className="document-sidebar" aria-label="Document toolbar">
                 <button
@@ -424,33 +446,12 @@ export default function Admin() {
                     update. You can continue placing signature and date fields.
                   </p>
                 )}
-                <div ref={setToolsHost} />
                 {selected.status === "draft" && (
-                  <form
-                    className="send-form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (ready) void task(send);
-                    }}
+                  <section
+                    className="recipient-tools"
+                    aria-label="Manage recipient"
                   >
-                    <h3>Company signer</h3>
-                    <div className="signer-profile">
-                      <strong>Lichen Wang</strong>
-                      <small>readyreadymotors9999@gmail.com</small>
-                      <small>
-                        Sign in with this approved admin email to sign as
-                        Lichen.
-                      </small>
-                    </div>
-                    <p className="signer-help">
-                      Click a Lichen signature field on the PDF to choose Type
-                      or Draw. Click a date field to fill today’s date.
-                    </p>
-                    {signature && (
-                      <small className="signature-accepted">
-                        Signature accepted · {today}
-                      </small>
-                    )}
+                    {" "}
                     <h3>Recipient</h3>
                     <label>
                       Saved recipient
@@ -460,6 +461,12 @@ export default function Admin() {
                           const r = recipients.find(
                             (r) => r.id === e.target.value,
                           );
+                          if (!r) {
+                            setRecipientId("");
+                            setEmail("");
+                            setFirst("");
+                            setLast("");
+                          }
                           if (r) {
                             setRecipientId(r.id);
                             setEmail(r.email);
@@ -468,7 +475,7 @@ export default function Admin() {
                           }
                         }}
                       >
-                        <option value="">Choose a saved recipient…</option>
+                        <option value="">Add new recipient…</option>
                         {recipients.map((r) => (
                           <option key={r.id} value={r.id}>
                             {r.first_name} {r.last_name} · {r.email}
@@ -544,6 +551,35 @@ export default function Admin() {
                       New recipients are saved automatically when you send. You
                       can edit a saved contact here and update it.
                     </small>
+                  </section>
+                )}
+                <div ref={setToolsHost} />
+                {selected.status === "draft" && (
+                  <form
+                    className="send-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (ready) void task(send);
+                    }}
+                  >
+                    <h3>Company signer</h3>
+                    <div className="signer-profile">
+                      <strong>Lichen Wang</strong>
+                      <small>readyreadymotors9999@gmail.com</small>
+                      <small>
+                        Sign in with this approved admin email to sign as
+                        Lichen.
+                      </small>
+                    </div>
+                    <p className="signer-help">
+                      Click a Lichen signature field on the PDF to choose Type
+                      or Draw. Click a date field to fill today’s date.
+                    </p>
+                    {signature && (
+                      <small className="signature-accepted">
+                        Signature accepted · {today}
+                      </small>
+                    )}
                     <label>
                       Invitation delivery
                       <select
@@ -651,7 +687,31 @@ export default function Admin() {
                     datePreviews={{ company: dateApplied ? today : undefined }}
                     signerNames={{
                       company: "Lichen Wang",
-                      recipient: `${first} ${last}`.trim() || "Recipient",
+                      recipient:
+                        first.trim() && email
+                          ? `${first} ${last}`.trim()
+                          : undefined,
+                    }}
+                    recipientChoices={recipients.map((r) => ({
+                      id: r.id,
+                      name: `${r.first_name} ${r.last_name}`.trim(),
+                      email: r.email,
+                    }))}
+                    onChooseRecipient={(id) => {
+                      const r = recipients.find((r) => r.id === id);
+                      if (r) {
+                        setRecipientId(r.id);
+                        setEmail(r.email);
+                        setFirst(r.first_name);
+                        setLast(r.last_name);
+                        return;
+                      }
+                      document
+                        .querySelector<HTMLElement>(".recipient-tools select")
+                        ?.focus();
+                      document
+                        .querySelector(".recipient-tools")
+                        ?.scrollIntoView({ block: "nearest" });
                     }}
                     externalTools
                     toolsHost={toolsHost}
@@ -721,17 +781,23 @@ export default function Admin() {
                     className="secondary"
                     onClick={() =>
                       task(async () => {
+                        if (
+                          !confirm(
+                            "Edit this document? All signatures and dates, including Lichen Wang’s, will be cleared. The old signing link will stop working. Everyone must sign and date again.",
+                          )
+                        )
+                          return;
                         await api("revoke", { documentId: selected.id });
                         setShare("");
                         await show(selected.id);
                         await refresh();
                         setMessage(
-                          "Old link revoked. Review and sign again before creating a replacement invitation.",
+                          "All signatures and dates cleared. Edit the document, then sign again and send a new invitation.",
                         );
                       })
                     }
                   >
-                    Revoke link & return to draft
+                    Edit document & resend
                   </button>
                 )}
                 {selected.status === "completed" && (

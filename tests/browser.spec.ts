@@ -134,6 +134,10 @@ for (const delivery of ["share", "email"])
               : [],
           },
         });
+      if (b.action === "revoke") {
+        doc.status = "draft";
+        return r.fulfill({ json: { ok: true } });
+      }
       if (b.action === "send") {
         expect(b.email).toBe("123456@qq.com");
         expect(b.recipientName).toBe("Test Recipient");
@@ -171,7 +175,7 @@ for (const delivery of ["share", "email"])
     });
     await page.goto("/");
     await expect(
-      page.getByRole("heading", { name: "Documents", exact: true }),
+      page.getByRole("heading", { name: "Welcome back, Lichen", exact: true }),
     ).toBeVisible();
     await page
       .getByRole("button", { name: "＋ Upload PDF", exact: true })
@@ -197,6 +201,12 @@ for (const delivery of ["share", "email"])
       .locator(".pdf-page")
       .nth(0)
       .click({ position: { x: 80, y: 220 } });
+    await expect(
+      page.getByLabel("Field signer").locator('option[value="recipient"]'),
+    ).toHaveCount(0);
+    await page.getByLabel("Recipient first name").fill("Test");
+    await page.getByLabel("Recipient last name").fill("Recipient");
+    await page.getByLabel("Recipient email").fill("123456@qq.com");
     await page.getByLabel("Field signer").selectOption("recipient");
     await page.getByRole("button", { name: "Signature", exact: true }).click();
     await page
@@ -208,6 +218,31 @@ for (const delivery of ["share", "email"])
       .locator(".pdf-page")
       .nth(1)
       .click({ position: { x: 80, y: 220 } });
+    const field = page.getByRole("button", {
+      name: "Open company signature field 1 on page 1",
+      exact: true,
+    });
+    await field.scrollIntoViewIfNeeded();
+    const before = (await field.boundingBox())!;
+    const pageBox = (await page.locator(".pdf-page").first().boundingBox())!;
+    expect(before.width / pageBox.width).toBeCloseTo((0.28 * 2) / 3, 2);
+    const dateBox = (await page.locator(".field.date").first().boundingBox())!;
+    expect(dateBox.width / pageBox.width).toBeCloseTo(0.22 / 3, 2);
+    expect(dateBox.height / pageBox.height).toBeCloseTo(0.065 / 4, 2);
+    await page.mouse.move(
+      before.x + before.width / 2,
+      before.y + before.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      before.x + before.width / 2 + 35,
+      before.y + before.height / 2 + 20,
+      { steps: 8 },
+    );
+    await page.mouse.up();
+    await expect(page.locator(".field")).toHaveCount(4);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect((await field.boundingBox())!.x).toBeGreaterThan(before.x + 25);
     await page
       .getByRole("button", {
         name: "Open company signature field 1 on page 1",
@@ -289,7 +324,7 @@ for (const delivery of ["share", "email"])
       })
       .click();
     await expect(
-      page.getByRole("button", { name: "Revoke link & return to draft" }),
+      page.getByRole("button", { name: "Edit document & resend" }),
     ).toBeVisible();
     expect(sent).toBe(true);
     expect(saved).toBe(true);
@@ -297,6 +332,22 @@ for (const delivery of ["share", "email"])
       await expect(
         page.getByLabel("Signing link", { exact: true }),
       ).toHaveValue(/#\/sign\/a{64}$/);
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Edit document & resend" }).click();
+    await expect(page.getByRole("status")).toContainText(
+      "All signatures and dates cleared",
+    );
+    await expect(page.locator(".field-content img")).toHaveCount(0);
+    await expect(page.locator(".date-value")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", {
+        name:
+          delivery === "share"
+            ? "Sign & create share link →"
+            : "Sign & email recipient →",
+        exact: true,
+      }),
+    ).toBeDisabled();
     await page.screenshot({
       path: `/tmp/esign-admin-${delivery}.png`,
       fullPage: true,
@@ -572,9 +623,9 @@ for (const viewport of [
     await page.goto("/");
     await page.getByRole("button", { name: /PDF Editable.pdf/ }).click();
     await expect(page.locator(".pdf-page")).toHaveCount(2);
-    await expect(
-      page.getByRole("heading", { name: /All documents/ }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /All documents/ })).toHaveCount(
+      0,
+    );
     await expect(page.getByLabel("Document filename")).toBeVisible();
     await page
       .getByRole("button", { name: "Signature", exact: true })
@@ -587,8 +638,14 @@ for (const viewport of [
       .locator(".document-sidebar")
       .boundingBox())!;
     expect(Math.abs(sidebarBefore.y - sidebarAfter.y)).toBeLessThan(2);
-    if (viewport.width > 700)
-      await expect(page.getByLabel("Document filename")).toBeInViewport();
+    // The longer contact toolbar scrolls independently from the PDF.
+    const toolbarScroll = await page
+      .locator(".document-sidebar")
+      .evaluate((el) => el.scrollTop);
+    await page.locator(".document-scroll").evaluate((el) => (el.scrollTop = 0));
+    expect(
+      await page.locator(".document-sidebar").evaluate((el) => el.scrollTop),
+    ).toBe(toolbarScroll);
     await expect(
       page.getByRole("button", { name: "Signature", exact: true }),
     ).toBeInViewport();
@@ -674,6 +731,8 @@ for (const viewport of [
     await page
       .getByRole("button", { name: "Close signature dialog", exact: true })
       .click();
+    await page.getByLabel("Recipient first name").fill("Other");
+    await page.getByLabel("Recipient email").fill("other@qq.com");
     await page.getByLabel("Signer for field 1").selectOption("recipient");
     const ownerBox = (await page
       .getByLabel("Signer for field 1")
@@ -696,7 +755,7 @@ for (const viewport of [
       .getByRole("button", { name: "← Back to documents", exact: true })
       .click();
     await expect(
-      page.getByRole("heading", { name: /All documents/ }),
+      page.getByRole("tab", { name: /All documents/ }),
     ).toBeVisible();
     await page.getByRole("button", { name: /PDF Editable.pdf/ }).click();
     await expect(page.getByLabel("Field signer")).toBeVisible();

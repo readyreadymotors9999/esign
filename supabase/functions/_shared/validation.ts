@@ -41,7 +41,7 @@ export function validateFields(
       f.x < 0 ||
       f.y < 0 ||
       f.width < 0.05 ||
-      f.height < 0.02 ||
+      f.height < 0.01 ||
       f.x + f.width > 1.000001 ||
       f.y + f.height > 1.000001
     )

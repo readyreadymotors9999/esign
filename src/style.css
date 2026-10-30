@@ -1281,3 +1281,52 @@ body:has(.document-open) footer {
     width: 140px;
   }
 }
+/* Compact document dashboard and direct field manipulation. */
+.admin-workspace:not(.document-open) .workspace {
+  display: block;
+}
+.admin-workspace:not(.document-open) .document-panel {
+  display: none;
+}
+.admin-workspace:not(.document-open) .heading h1 {
+  font-size: 1.6rem;
+}
+.document-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.document-tabs button {
+  background: transparent;
+  color: var(--ink, #203544);
+  border-radius: 0;
+  border-bottom: 3px solid transparent;
+  padding: 16px;
+}
+.document-tabs button[aria-selected="true"] {
+  border-color: #187e69;
+  background: #eef6f3;
+}
+.recipient-tools {
+  border-bottom: 1px solid #dbe5e5;
+  padding-bottom: 18px;
+  margin-bottom: 18px;
+}
+.recipient-tools button {
+  margin-top: 8px;
+}
+.pdf-page .field .field-content {
+  touch-action: none;
+  cursor: grab;
+}
+.pdf-page .field .field-content:active {
+  cursor: grabbing;
+}
+.pdf-page .field .field-content .field-label {
+  font-size: clamp(7px, 1vw, 12px);
+  white-space: nowrap;
+}
+.pdf-page .field.date .date-value {
+  font-size: clamp(6px, 0.8vw, 10px);
+  white-space: nowrap;
+}
