@@ -40,7 +40,9 @@ export default function Admin() {
     [delivery, setDelivery] = useState<"email" | "share">("email"),
     [share, setShare] = useState(""),
     [pdfReady, setPdfReady] = useState(false),
-    [editingAvailable, setEditingAvailable] = useState(false);
+    [editingAvailable, setEditingAvailable] = useState(false),
+    [pageRangesAvailable, setPageRangesAvailable] = useState(false),
+    [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
   async function refresh() {
     const data = await api("list");
     setDocs(data.documents);
@@ -68,6 +70,7 @@ export default function Admin() {
   async function show(id: string) {
     const data = await api("detail", { documentId: id });
     setEditingAvailable(data.capabilities?.pdfEditing === true);
+    setPageRangesAvailable(data.capabilities?.pdfPageRanges === true);
     setSelected(data.document);
     setFields(data.document.fields);
     setUrl(data.url || "");
@@ -133,35 +136,37 @@ export default function Admin() {
       ),
     );
   return (
-    <>
-      <div className="heading">
-        <div>
-          <div className="eyebrow">YOUR WORKSPACE</div>
-          <h1>Documents</h1>
-          <p>Prepare together. Sign with confidence.</p>
+    <div className={`admin-workspace ${selected ? "document-open" : ""}`}>
+      {!selected && (
+        <div className="heading">
+          <div>
+            <div className="eyebrow">YOUR WORKSPACE</div>
+            <h1>Documents</h1>
+            <p>Prepare together. Sign with confidence.</p>
+          </div>
+          <div className="actions">
+            <button
+              disabled={busy}
+              onClick={() => {
+                setSource("pdf");
+                setAuthorize(undefined);
+              }}
+            >
+              ＋ Upload PDF
+            </button>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() => {
+                setSource("google");
+                setAuthorize(undefined);
+              }}
+            >
+              Import Google Doc
+            </button>
+          </div>
         </div>
-        <div className="actions">
-          <button
-            disabled={busy}
-            onClick={() => {
-              setSource("pdf");
-              setAuthorize(undefined);
-            }}
-          >
-            ＋ Upload PDF
-          </button>
-          <button
-            className="secondary"
-            disabled={busy}
-            onClick={() => {
-              setSource("google");
-              setAuthorize(undefined);
-            }}
-          >
-            Import Google Doc
-          </button>
-        </div>
-      </div>
+      )}
       {message && (
         <p role="status" className="notice">
           {message}
@@ -266,50 +271,52 @@ export default function Admin() {
           )}
         </section>
       )}
-      <div className="workspace">
-        <aside className="card document-list">
-          <div className="split">
-            <h2>
-              All documents <span className="count">{docs.length}</span>
-            </h2>
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={() => task(refresh)}
-            >
-              Refresh
-            </button>
-          </div>
-          {!docs.length && (
-            <div className="empty">
-              <div className="empty-icon">▤</div>
-              <h3>A fresh start</h3>
-              <p>Upload a PDF or import a Google Doc.</p>
+      <div className={`workspace ${selected ? "single-document" : ""}`}>
+        {!selected && (
+          <aside className="card document-list">
+            <div className="split">
+              <h2>
+                All documents <span className="count">{docs.length}</span>
+              </h2>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => task(refresh)}
+              >
+                Refresh
+              </button>
             </div>
-          )}
-          {docs.map((doc) => (
-            <button
-              disabled={busy}
-              className={`doc-row ${selected?.id === doc.id ? "selected" : ""}`}
-              key={doc.id}
-              onClick={() =>
-                task(async () => {
-                  setShare("");
-                  await show(doc.id);
-                  await refresh();
-                })
-              }
-            >
-              <span className="file-icon">PDF</span>
-              <span className="doc-info">
-                <strong>{doc.title}</strong>
-                <small>{new Date(doc.created_at).toLocaleDateString()}</small>
-              </span>
-              <span className={`badge ${doc.status}`}>{doc.status}</span>
-            </button>
-          ))}
-        </aside>
-        <section>
+            {!docs.length && (
+              <div className="empty">
+                <div className="empty-icon">▤</div>
+                <h3>A fresh start</h3>
+                <p>Upload a PDF or import a Google Doc.</p>
+              </div>
+            )}
+            {docs.map((doc) => (
+              <button
+                disabled={busy}
+                className="doc-row"
+                key={doc.id}
+                onClick={() =>
+                  task(async () => {
+                    setShare("");
+                    await show(doc.id);
+                    await refresh();
+                  })
+                }
+              >
+                <span className="file-icon">PDF</span>
+                <span className="doc-info">
+                  <strong>{doc.title}</strong>
+                  <small>{new Date(doc.created_at).toLocaleDateString()}</small>
+                </span>
+                <span className={`badge ${doc.status}`}>{doc.status}</span>
+              </button>
+            ))}
+          </aside>
+        )}
+        <section className="document-panel">
           {!selected ? (
             <div className="card welcome">
               <span className="empty-icon">✎</span>
@@ -326,341 +333,362 @@ export default function Admin() {
             </div>
           ) : (
             <div className="card editor">
-              <div className="split">
-                <h2>{selected.title}</h2>
-                <span className={`badge ${selected.status}`}>
-                  {selected.status}
-                </span>
-              </div>
-              {selected.status === "draft" && (
-                <>
-                  <form
-                    className="rename"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void task(async () => {
-                        await api("rename", {
-                          documentId: selected.id,
-                          title: rename,
-                        });
-                        setSelected({ ...selected, title: rename.trim() });
-                        await refresh();
-                        setMessage("Document filename updated.");
-                      });
-                    }}
-                  >
-                    <label>
-                      Document filename
-                      <input
-                        required
-                        maxLength={200}
-                        value={rename}
-                        onChange={(e) => setRename(e.target.value)}
-                      />
-                    </label>
-                    <button disabled={busy} className="secondary">
-                      Save filename
-                    </button>
-                  </form>
-                  <p>
-                    Choose a signer, then place a signature and date field for
-                    each person on the PDF.
-                  </p>
-                </>
-              )}
-              {selected.status === "draft" && !editingAvailable && (
-                <p className="notice">
-                  Page editing will be available after the Supabase backend
-                  update. You can continue placing signature and date fields.
-                </p>
-              )}
-              {url && (
-                <Pdf
-                  key={`${selected.id}-${selected.status}`}
-                  url={url}
-                  fields={
-                    selected.status === "completed"
-                      ? []
-                      : selected.status === "sent"
-                        ? fields.filter((f) => f.signer !== "company")
-                        : fields
-                  }
-                  place={
-                    selected.status === "draft"
-                      ? (field) => {
-                          if (!busy) setFields([...fields, field]);
-                        }
-                      : undefined
-                  }
-                  remove={
-                    selected.status === "draft"
-                      ? (i) => {
-                          if (!busy)
-                            setFields(fields.filter((_, j) => i !== j));
-                        }
-                      : undefined
-                  }
-                  busy={busy}
-                  onEdit={
-                    selected.status === "draft" && editingAvailable
-                      ? (operation, page, file) =>
-                          task(async () => {
-                            await editDocumentPdf(
-                              selected.id,
-                              selected.original_path,
-                              operation,
-                              page,
-                              fields,
-                              file,
-                            );
-                            await show(selected.id);
-                            await refresh();
-                            setMessage(
-                              "PDF updated. Review the pages and fields, then sign again before sending.",
-                            );
-                          })
-                      : undefined
-                  }
-                  onReady={setPdfReady}
-                />
-              )}
-              {selected.status === "draft" && (
-                <form
-                  className="send-form"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (ready) void task(send);
+              <aside className="document-sidebar" aria-label="Document toolbar">
+                <button
+                  className="secondary back-documents"
+                  disabled={busy}
+                  onClick={() => {
+                    setSelected(undefined);
+                    setShare("");
+                    setSource(null);
                   }}
                 >
-                  <h3>Company signer</h3>
-                  <div className="signer-profile">
-                    <strong>Lichen Wang</strong>
-                    <small>readyreadymotors9999@gmail.com</small>
-                    <small>
-                      Sign in with this approved admin email to sign as Lichen.
-                    </small>
-                  </div>
-                  <Signature
-                    key={`${selected.id}-${signatureVersion}`}
-                    defaultName="Lichen Wang"
-                    onChange={setSignature}
-                    onMethodChange={setSignatureMethod}
-                  />
-                  <label className="consent">
-                    <input
-                      type="checkbox"
-                      checked={consent}
-                      onChange={(e) => setConsent(e.target.checked)}
-                    />
-                    <span>
-                      I am Lichen Wang, have reviewed this document, and consent
-                      to this binding electronic signature for Ready Ready
-                      Motors, Inc. My signature and the current UTC date will be
-                      applied when I create the invitation.
-                    </span>
-                  </label>
-                  <h3>Recipient</h3>
-                  <label>
-                    Saved recipient
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const r = recipients.find(
-                          (r) => r.id === e.target.value,
-                        );
-                        if (r) {
-                          setEmail(r.email);
-                          setFirst(r.first_name);
-                          setLast(r.last_name);
-                        }
+                  ← Back to documents
+                </button>
+                <div className="split">
+                  <h2>{selected.title}</h2>
+                  <span className={`badge ${selected.status}`}>
+                    {selected.status}
+                  </span>
+                </div>
+                {selected.status === "draft" && (
+                  <>
+                    <form
+                      className="rename"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void task(async () => {
+                          await api("rename", {
+                            documentId: selected.id,
+                            title: rename,
+                          });
+                          setSelected({ ...selected, title: rename.trim() });
+                          await refresh();
+                          setMessage("Document filename updated.");
+                        });
                       }}
                     >
-                      <option value="">Choose a saved recipient…</option>
-                      {recipients.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.first_name} {r.last_name} · {r.email}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="name-fields">
+                      <label>
+                        Document filename
+                        <input
+                          required
+                          maxLength={200}
+                          value={rename}
+                          onChange={(e) => setRename(e.target.value)}
+                        />
+                      </label>
+                      <button disabled={busy} className="secondary">
+                        Save filename
+                      </button>
+                    </form>
+                    <p>
+                      Choose a signer, then place a signature and date field for
+                      each person on the PDF.
+                    </p>
+                  </>
+                )}
+                {selected.status === "draft" && !editingAvailable && (
+                  <p className="notice">
+                    Page editing will be available after the Supabase backend
+                    update. You can continue placing signature and date fields.
+                  </p>
+                )}
+                <div ref={setToolsHost} />
+              </aside>
+              <div className="document-scroll">
+                {url && (
+                  <Pdf
+                    key={`${selected.id}-${selected.status}`}
+                    url={url}
+                    fields={
+                      selected.status === "completed"
+                        ? []
+                        : selected.status === "sent"
+                          ? fields.filter((f) => f.signer !== "company")
+                          : fields
+                    }
+                    place={
+                      selected.status === "draft"
+                        ? (field) => {
+                            if (!busy) setFields([...fields, field]);
+                          }
+                        : undefined
+                    }
+                    remove={
+                      selected.status === "draft"
+                        ? (i) => {
+                            if (!busy)
+                              setFields(fields.filter((_, j) => i !== j));
+                          }
+                        : undefined
+                    }
+                    externalTools
+                    toolsHost={toolsHost}
+                    rangeEditing={pageRangesAvailable}
+                    busy={busy}
+                    onEdit={
+                      selected.status === "draft" && editingAvailable
+                        ? (operation, page, file, range) =>
+                            task(async () => {
+                              await editDocumentPdf(
+                                selected.id,
+                                selected.original_path,
+                                operation,
+                                page,
+                                fields,
+                                file,
+                                range,
+                              );
+                              await show(selected.id);
+                              await refresh();
+                              setMessage(
+                                "PDF updated. Review the pages and fields, then sign again before sending.",
+                              );
+                            })
+                        : undefined
+                    }
+                    onReady={setPdfReady}
+                  />
+                )}
+                {selected.status === "draft" && (
+                  <form
+                    className="send-form"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (ready) void task(send);
+                    }}
+                  >
+                    <h3>Company signer</h3>
+                    <div className="signer-profile">
+                      <strong>Lichen Wang</strong>
+                      <small>readyreadymotors9999@gmail.com</small>
+                      <small>
+                        Sign in with this approved admin email to sign as
+                        Lichen.
+                      </small>
+                    </div>
+                    <Signature
+                      key={`${selected.id}-${signatureVersion}`}
+                      defaultName="Lichen Wang"
+                      onChange={setSignature}
+                      onMethodChange={setSignatureMethod}
+                    />
+                    <label className="consent">
+                      <input
+                        type="checkbox"
+                        checked={consent}
+                        onChange={(e) => setConsent(e.target.checked)}
+                      />
+                      <span>
+                        I am Lichen Wang, have reviewed this document, and
+                        consent to this binding electronic signature for Ready
+                        Ready Motors, Inc. My signature and the current UTC date
+                        will be applied when I create the invitation.
+                      </span>
+                    </label>
+                    <h3>Recipient</h3>
                     <label>
-                      Recipient first name
+                      Saved recipient
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const r = recipients.find(
+                            (r) => r.id === e.target.value,
+                          );
+                          if (r) {
+                            setEmail(r.email);
+                            setFirst(r.first_name);
+                            setLast(r.last_name);
+                          }
+                        }}
+                      >
+                        <option value="">Choose a saved recipient…</option>
+                        {recipients.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.first_name} {r.last_name} · {r.email}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="name-fields">
+                      <label>
+                        Recipient first name
+                        <input
+                          required
+                          maxLength={100}
+                          value={first}
+                          onChange={(e) => setFirst(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Recipient last name
+                        <input
+                          maxLength={100}
+                          value={last}
+                          onChange={(e) => setLast(e.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <label>
+                      Recipient email
                       <input
                         required
-                        maxLength={100}
-                        value={first}
-                        onChange={(e) => setFirst(e.target.value)}
+                        type="email"
+                        placeholder="recipient@qq.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
                       />
                     </label>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy || !email || !first.trim()}
+                      onClick={() =>
+                        task(async () => {
+                          await api("save_recipient", {
+                            email,
+                            firstName: first,
+                            lastName: last,
+                          });
+                          await refreshRecipients();
+                          setMessage(
+                            "Recipient saved to your private address book.",
+                          );
+                        })
+                      }
+                    >
+                      Save recipient
+                    </button>
                     <label>
-                      Recipient last name
+                      Invitation delivery
+                      <select
+                        value={delivery}
+                        onChange={(e) =>
+                          setDelivery(e.target.value as "email" | "share")
+                        }
+                      >
+                        <option value="share">
+                          Create share link (no email)
+                        </option>
+                        <option value="email">
+                          Send email invitation via Gmail
+                        </option>
+                      </select>
+                    </label>
+                    <button disabled={busy || !ready}>
+                      {busy
+                        ? "Preparing…"
+                        : delivery === "share"
+                          ? "Sign & create share link →"
+                          : "Sign & email recipient →"}
+                    </button>
+                    <small className="block">
+                      Only the recipient is invited. Both signatures remain in
+                      the completed PDF.
+                    </small>
+                  </form>
+                )}
+                {share && (
+                  <div className="share-panel">
+                    <h3>Private signing link</h3>
+                    <p>
+                      Anyone with this link can sign as the recipient. Share it
+                      only with the intended person. It will not be shown again
+                      after leaving this document.
+                    </p>
+                    <label>
+                      Signing link
                       <input
-                        maxLength={100}
-                        value={last}
-                        onChange={(e) => setLast(e.target.value)}
+                        readOnly
+                        value={share}
+                        onFocus={(e) => e.target.select()}
                       />
                     </label>
+                    <button
+                      onClick={() =>
+                        task(async () => {
+                          await navigator.clipboard.writeText(share);
+                          setMessage("Signing link copied.");
+                        })
+                      }
+                    >
+                      Copy signing link
+                    </button>
                   </div>
-                  <label>
-                    Recipient email
-                    <input
-                      required
-                      type="email"
-                      placeholder="recipient@qq.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                    />
-                  </label>
+                )}
+                {selected.status === "sent" && (
+                  <p className="notice">
+                    Lichen Wang has signed. Awaiting recipient signature. The
+                    link expires after 72 hours.
+                  </p>
+                )}
+                {selected.status === "sent" && (
                   <button
-                    type="button"
+                    disabled={busy}
                     className="secondary"
-                    disabled={busy || !email || !first.trim()}
                     onClick={() =>
                       task(async () => {
-                        await api("save_recipient", {
-                          email,
-                          firstName: first,
-                          lastName: last,
-                        });
-                        await refreshRecipients();
+                        await api("revoke", { documentId: selected.id });
+                        setShare("");
+                        await show(selected.id);
+                        await refresh();
                         setMessage(
-                          "Recipient saved to your private address book.",
+                          "Old link revoked. Review and sign again before creating a replacement invitation.",
                         );
                       })
                     }
                   >
-                    Save recipient
+                    Revoke link & return to draft
                   </button>
-                  <label>
-                    Invitation delivery
-                    <select
-                      value={delivery}
-                      onChange={(e) =>
-                        setDelivery(e.target.value as "email" | "share")
-                      }
-                    >
-                      <option value="share">
-                        Create share link (no email)
-                      </option>
-                      <option value="email">
-                        Send email invitation via Gmail
-                      </option>
-                    </select>
-                  </label>
-                  <button disabled={busy || !ready}>
-                    {busy
-                      ? "Preparing…"
-                      : delivery === "share"
-                        ? "Sign & create share link →"
-                        : "Sign & email recipient →"}
-                  </button>
-                  <small className="block">
-                    Only the recipient is invited. Both signatures remain in the
-                    completed PDF.
-                  </small>
-                </form>
-              )}
-              {share && (
-                <div className="share-panel">
-                  <h3>Private signing link</h3>
-                  <p>
-                    Anyone with this link can sign as the recipient. Share it
-                    only with the intended person. It will not be shown again
-                    after leaving this document.
-                  </p>
-                  <label>
-                    Signing link
-                    <input
-                      readOnly
-                      value={share}
-                      onFocus={(e) => e.target.select()}
-                    />
-                  </label>
+                )}
+                {selected.status === "completed" && (
                   <button
+                    disabled={busy}
                     onClick={() =>
                       task(async () => {
-                        await navigator.clipboard.writeText(share);
-                        setMessage("Signing link copied.");
+                        const data = await api("download", {
+                          documentId: selected.id,
+                        });
+                        const r = await fetch(data.url);
+                        if (!r.ok) throw new Error("Download failed");
+                        const objectUrl = URL.createObjectURL(await r.blob()),
+                          a = document.createElement("a");
+                        a.href = objectUrl;
+                        a.download = `signed-${selected.title.replace(/\.pdf$/i, "")}.pdf`;
+                        a.click();
+                        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
                       })
                     }
                   >
-                    Copy signing link
+                    ↓ Download signed PDF
                   </button>
-                </div>
-              )}
-              {selected.status === "sent" && (
-                <p className="notice">
-                  Lichen Wang has signed. Awaiting recipient signature. The link
-                  expires after 72 hours.
-                </p>
-              )}
-              {selected.status === "sent" && (
-                <button
-                  disabled={busy}
-                  className="secondary"
-                  onClick={() =>
-                    task(async () => {
-                      await api("revoke", { documentId: selected.id });
-                      setShare("");
-                      await show(selected.id);
-                      await refresh();
-                      setMessage(
-                        "Old link revoked. Review and sign again before creating a replacement invitation.",
-                      );
-                    })
-                  }
-                >
-                  Revoke link & return to draft
-                </button>
-              )}
-              {selected.status === "completed" && (
-                <button
-                  disabled={busy}
-                  onClick={() =>
-                    task(async () => {
-                      const data = await api("download", {
-                        documentId: selected.id,
-                      });
-                      const r = await fetch(data.url);
-                      if (!r.ok) throw new Error("Download failed");
-                      const objectUrl = URL.createObjectURL(await r.blob()),
-                        a = document.createElement("a");
-                      a.href = objectUrl;
-                      a.download = `signed-${selected.title.replace(/\.pdf$/i, "")}.pdf`;
-                      a.click();
-                      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-                    })
-                  }
-                >
-                  ↓ Download signed PDF
-                </button>
-              )}
-              <div className="audit">
-                <h3>Audit trail</h3>
-                {audit.map((event) => (
-                  <div className="audit-row" key={event.id}>
-                    <span className="dot" />
-                    <div>
-                      <strong>{event.event.replaceAll("_", " ")}</strong>
-                      <small>
-                        {new Date(event.created_at).toLocaleString()} ·{" "}
-                        {event.actor}
-                      </small>
-                      {Object.keys(event.metadata || {}).length > 0 && (
-                        <details>
-                          <summary>Event details</summary>
-                          <pre>{JSON.stringify(event.metadata, null, 2)}</pre>
-                        </details>
-                      )}
+                )}
+                <div className="audit">
+                  <h3>Audit trail</h3>
+                  {audit.map((event) => (
+                    <div className="audit-row" key={event.id}>
+                      <span className="dot" />
+                      <div>
+                        <strong>{event.event.replaceAll("_", " ")}</strong>
+                        <small>
+                          {new Date(event.created_at).toLocaleString()} ·{" "}
+                          {event.actor}
+                        </small>
+                        {Object.keys(event.metadata || {}).length > 0 && (
+                          <details>
+                            <summary>Event details</summary>
+                            <pre>{JSON.stringify(event.metadata, null, 2)}</pre>
+                          </details>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           )}
         </section>
       </div>
-    </>
+    </div>
   );
 }

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { parsePageRange } from "../supabase/functions/_shared/page-range.ts";
 import * as pdfjs from "pdfjs-dist";
 import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { Field } from "./api";
@@ -11,6 +13,9 @@ export function Pdf({
   onReady,
   onEdit,
   busy = false,
+  toolsHost,
+  externalTools = false,
+  rangeEditing = false,
 }: {
   url: string;
   fields: Field[];
@@ -18,16 +23,22 @@ export function Pdf({
   remove?: (index: number) => void;
   onReady?: (ready: boolean) => void;
   onEdit?: (
-    operation: "delete" | "blank" | "append" | "replace",
+    operation: "delete" | "delete-range" | "blank" | "append" | "replace",
     page: number,
     file?: File,
+    range?: string,
   ) => void;
   busy?: boolean;
+  toolsHost?: HTMLElement | null;
+  externalTools?: boolean;
+  rangeEditing?: boolean;
 }) {
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
   const [error, setError] = useState("");
   const [signer, setSigner] = useState<"company" | "recipient">("company");
   const [type, setType] = useState<"signature" | "date">("signature");
+  const [customRange, setCustomRange] = useState("");
+  const [rangeError, setRangeError] = useState("");
   const [editPage, setEditPage] = useState(1);
   useEffect(() => {
     if (pdf) setEditPage((p) => Math.min(p, pdf.numPages));
@@ -66,122 +77,198 @@ export function Pdf({
     setError("Unable to render a PDF page. Refresh before signing.");
     onReady?.(false);
   }, [onReady]);
-  return (
-    <div className={place ? "pdf-editor-layout" : "pdf-viewer"}>
-      {place && (
-        <aside className="toolbar pdf-tools" aria-label="PDF editing tools">
-          <label className="field-signer">
-            Field signer
+  const tools = place ? (
+    <aside className="toolbar pdf-tools" aria-label="PDF editing tools">
+      <label className="field-signer">
+        Field signer
+        <select
+          aria-label="Field signer"
+          value={signer}
+          onChange={(e) => setSigner(e.target.value as "company" | "recipient")}
+        >
+          <option value="company">Lichen Wang</option>
+          <option value="recipient">Recipient</option>
+        </select>
+      </label>
+      <span>Place field</span>
+      <button
+        className={type === "signature" ? "active" : "secondary"}
+        onClick={() => setType("signature")}
+      >
+        Signature
+      </button>
+      <button
+        className={type === "date" ? "active" : "secondary"}
+        onClick={() => setType("date")}
+      >
+        Date
+      </button>
+      <small>
+        Click a page to place a field. Use the red × or a Delete button below to
+        remove it.
+      </small>
+      {fields.length > 0 && (
+        <div className="field-inventory">
+          <h3>Placed fields ({fields.length})</h3>
+          {fields.map((f, i) => (
+            <div className="field-inventory-row" key={i}>
+              <span>
+                {f.signer === "company" ? "Lichen" : "Recipient"} · {f.type}
+                <small>Page {f.page}</small>
+              </span>
+              <button
+                type="button"
+                className="danger-link"
+                disabled={busy}
+                aria-label={`Delete placed field ${i + 1} on page ${f.page}`}
+                onClick={() => remove?.(i)}
+              >
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {onEdit && pdf && (
+        <div className="page-tools">
+          <h3>Edit PDF</h3>
+          <label>
+            Selected page
             <select
-              aria-label="Field signer"
-              value={signer}
-              onChange={(e) =>
-                setSigner(e.target.value as "company" | "recipient")
-              }
+              value={editPage}
+              onChange={(e) => setEditPage(Number(e.target.value))}
             >
-              <option value="company">Lichen Wang</option>
-              <option value="recipient">Recipient</option>
+              {Array.from({ length: pdf.numPages }, (_, i) => (
+                <option key={i} value={i + 1}>
+                  Page {i + 1}
+                </option>
+              ))}
             </select>
           </label>
-          <span>Place field</span>
           <button
-            className={type === "signature" ? "active" : "secondary"}
-            onClick={() => setType("signature")}
+            type="button"
+            disabled={busy || pdf.numPages >= 100}
+            className="secondary"
+            onClick={() => onEdit("blank", editPage)}
           >
-            Signature
+            Add blank page after
           </button>
           <button
-            className={type === "date" ? "active" : "secondary"}
-            onClick={() => setType("date")}
+            type="button"
+            disabled={busy || pdf.numPages <= 1}
+            className="secondary"
+            onClick={() => {
+              if (
+                confirm(
+                  `Delete page ${editPage}? Fields on that page will also be removed.`,
+                )
+              )
+                onEdit("delete", editPage);
+            }}
           >
-            Date
+            Delete selected page
           </button>
-          <small>Click a page to place. Click a field to remove.</small>
-          {onEdit && pdf && (
-            <div className="page-tools">
-              <h3>Edit PDF</h3>
+          {rangeEditing && (
+            <div className="range-delete">
               <label>
-                Selected page
-                <select
-                  value={editPage}
-                  onChange={(e) => setEditPage(Number(e.target.value))}
-                >
-                  {Array.from({ length: pdf.numPages }, (_, i) => (
-                    <option key={i} value={i + 1}>
-                      Page {i + 1}
-                    </option>
-                  ))}
-                </select>
+                Custom page range
+                <input
+                  value={customRange}
+                  onChange={(e) => {
+                    setCustomRange(e.target.value);
+                    setRangeError("");
+                  }}
+                  placeholder="1-3, 4, 7"
+                />
               </label>
               <button
                 type="button"
-                disabled={busy || pdf.numPages >= 100}
                 className="secondary"
-                onClick={() => onEdit("blank", editPage)}
-              >
-                Add blank page after
-              </button>
-              <button
-                type="button"
-                disabled={busy || pdf.numPages <= 1}
-                className="secondary"
+                disabled={busy || !customRange.trim()}
                 onClick={() => {
-                  if (
-                    confirm(
-                      `Delete page ${editPage}? Fields on that page will also be removed.`,
-                    )
-                  )
-                    onEdit("delete", editPage);
+                  try {
+                    const pages = parsePageRange(customRange, pdf.numPages);
+                    if (pages.length >= pdf.numPages)
+                      throw new Error(
+                        "Keep at least one page in the document.",
+                      );
+                    if (
+                      confirm(
+                        `Delete pages ${pages.join(", ")}? Fields on those pages will also be removed.`,
+                      )
+                    ) {
+                      onEdit("delete-range", editPage, undefined, customRange);
+                      setCustomRange("");
+                    }
+                  } catch (e) {
+                    setRangeError((e as Error).message);
+                  }
                 }}
               >
-                Delete selected page
+                Delete custom page range
               </button>
-              <label
-                className={`button secondary file-tool ${busy ? "disabled" : ""}`}
-              >
-                Append PDF
-                <input
-                  hidden
-                  disabled={busy}
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (file) onEdit("append", editPage, file);
-                  }}
-                />
-              </label>
-              <label
-                className={`button secondary file-tool ${busy ? "disabled" : ""}`}
-              >
-                Replace PDF
-                <input
-                  hidden
-                  disabled={busy}
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (
-                      file &&
-                      confirm(
-                        "Replace the draft PDF? All placed fields and the current signature will be cleared.",
-                      )
-                    )
-                      onEdit("replace", editPage, file);
-                  }}
-                />
-              </label>
-              <small>
-                Edits save immediately. Original revisions stay private. Only
-                drafts can be edited.
-              </small>
+              {rangeError && (
+                <small role="alert" className="range-error">
+                  {rangeError}
+                </small>
+              )}
             </div>
           )}
-        </aside>
+          <label
+            className={`button secondary file-tool ${busy ? "disabled" : ""}`}
+          >
+            Append PDF
+            <input
+              hidden
+              disabled={busy}
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) onEdit("append", editPage, file);
+              }}
+            />
+          </label>
+          <label
+            className={`button secondary file-tool ${busy ? "disabled" : ""}`}
+          >
+            Replace entire PDF
+            <input
+              hidden
+              disabled={busy}
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (
+                  file &&
+                  confirm(
+                    "Replace the draft PDF? All placed fields and the current signature will be cleared.",
+                  )
+                )
+                  onEdit("replace", editPage, file);
+              }}
+            />
+          </label>
+          <small>
+            Edits save immediately. Original revisions stay private. Only drafts
+            can be edited.
+          </small>
+        </div>
       )}
+    </aside>
+  ) : null;
+  return (
+    <div
+      className={place && !externalTools ? "pdf-editor-layout" : "pdf-viewer"}
+    >
+      {externalTools
+        ? toolsHost && tools
+          ? createPortal(tools, toolsHost)
+          : null
+        : tools}
       <div className="pdf-pages">
         {error && <p role="alert">{error}</p>}
         {!pdf && !error && <p>Loading document…</p>}
@@ -278,7 +365,7 @@ function Page({
       {fields.map(
         (f, i) =>
           f.page === page && (
-            <button
+            <div
               key={i}
               className={`field ${f.type} ${f.signer || "recipient"}`}
               style={{
@@ -289,13 +376,29 @@ function Page({
               }}
               onClick={(e) => {
                 e.stopPropagation();
-                remove?.(i);
               }}
-              aria-label={`${f.type} field on page ${page}${remove ? ", remove" : ""}`}
+              role="group"
+              aria-label={`${f.type} field on page ${page}`}
             >
-              {f.signer === "company" ? "Lichen · " : "Recipient · "}
-              {f.type === "signature" ? "Signature" : "Date (UTC)"}
-            </button>
+              <span className="field-label">
+                {f.signer === "company" ? "Lichen · " : "Recipient · "}
+                {f.type === "signature" ? "Signature" : "Date (UTC)"}
+              </span>
+              {remove && (
+                <button
+                  type="button"
+                  className="field-remove"
+                  aria-label={`Delete ${f.type} field on page ${page}`}
+                  title="Delete field"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove(i);
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
           ),
       )}
       <span className="page-number">Page {page}</span>

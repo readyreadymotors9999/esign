@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PDFDocument, degrees } from "pdf-lib";
+import { PDFDocument } from "pdf-lib";
 import { editPdf } from "../supabase/functions/_shared/edit-pdf.ts";
 async function fixture(count = 3) {
   const p = await PDFDocument.create();
@@ -78,4 +78,33 @@ test("single-page deletion, 101-page edits and malformed layouts are rejected", 
   await assert.rejects(() => editPdf(full, "blank", 1, []));
   await assert.rejects(() => editPdf(full, "append", 1, [], one));
   await assert.rejects(() => editPdf(one, "blank", 1, fields));
+});
+
+test("custom deletion deduplicates ranges, keeps page order and reindexes fields", async () => {
+  const source = await fixture(8),
+    layout = [1, 5, 7, 8].map((page) => ({ ...fields[0], page }));
+  const result = await editPdf(
+    source,
+    "delete-range",
+    1,
+    layout,
+    undefined,
+    "1-3, 4, 7, 2",
+  );
+  assert.equal(result.pages, 3);
+  assert.deepEqual(
+    result.fields.map((f) => f.page),
+    [1, 3],
+  );
+  const pdf = await PDFDocument.load(result.bytes);
+  assert.deepEqual(
+    pdf.getPages().map((p) => p.getWidth()),
+    [640, 650, 670],
+  );
+  await assert.rejects(() =>
+    editPdf(source, "delete-range", 1, layout, undefined, "1-8"),
+  );
+  await assert.rejects(() =>
+    editPdf(source, "delete-range", 1, layout, undefined, "0, 9"),
+  );
 });

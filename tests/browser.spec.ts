@@ -477,6 +477,7 @@ for (const viewport of [
           Number(form.get("page")),
           JSON.parse(String(form.get("fields"))),
           file ? new Uint8Array(await file.arrayBuffer()) : undefined,
+          String(form.get("range") || ""),
         );
         current = Buffer.from(result.bytes);
         doc.fields = result.fields;
@@ -490,7 +491,7 @@ for (const viewport of [
       if (b.action === "detail")
         return r.fulfill({
           json: {
-            capabilities: { pdfEditing: true },
+            capabilities: { pdfEditing: true, pdfPageRanges: true },
             document: doc,
             url: `/fixture.pdf?v=${revision}`,
             audit: [],
@@ -502,7 +503,23 @@ for (const viewport of [
     await page.goto("/");
     await page.getByRole("button", { name: /PDF Editable.pdf/ }).click();
     await expect(page.locator(".pdf-page")).toHaveCount(2);
+    await expect(
+      page.getByRole("heading", { name: /All documents/ }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Document filename")).toBeVisible();
+    await page
+      .getByRole("button", { name: "Signature", exact: true })
+      .scrollIntoViewIfNeeded();
+    const sidebarBefore = (await page
+      .locator(".document-sidebar")
+      .boundingBox())!;
     await page.locator(".pdf-page").last().scrollIntoViewIfNeeded();
+    const sidebarAfter = (await page
+      .locator(".document-sidebar")
+      .boundingBox())!;
+    expect(Math.abs(sidebarBefore.y - sidebarAfter.y)).toBeLessThan(2);
+    if (viewport.width > 700)
+      await expect(page.getByLabel("Document filename")).toBeInViewport();
     await expect(
       page.getByRole("button", { name: "Signature", exact: true }),
     ).toBeInViewport();
@@ -516,35 +533,75 @@ for (const viewport of [
       .last()
       .click({ position: { x: 60, y: 180 } });
     await expect(page.locator(".field")).toHaveCount(1);
+    await page
+      .getByRole("button", {
+        name: "Delete signature field on page 2",
+        exact: true,
+      })
+      .click();
+    await expect(page.locator(".field")).toHaveCount(0);
+    await page
+      .locator(".pdf-page")
+      .last()
+      .click({ position: { x: 60, y: 180 } });
+    await page
+      .getByRole("button", {
+        name: "Delete placed field 1 on page 2",
+        exact: true,
+      })
+      .click();
+    await expect(page.locator(".field")).toHaveCount(0);
+    await page
+      .locator(".pdf-page")
+      .last()
+      .click({ position: { x: 60, y: 180 } });
     await page.getByLabel("Selected page").selectOption("1");
     await page.getByRole("button", { name: "Delete selected page" }).click();
     await expect(page.locator(".pdf-page")).toHaveCount(1);
     await expect(page.getByRole("status")).toContainText("PDF updated");
     await expect(page.locator(".field")).toHaveCount(1);
     expect(doc.fields[0].page).toBe(1);
-    await page
-      .getByLabel("Append PDF", { exact: true })
-      .setInputFiles({
-        name: "extra.pdf",
-        mimeType: "application/pdf",
-        buffer: await fixture(),
-      });
+    await page.getByLabel("Append PDF", { exact: true }).setInputFiles({
+      name: "extra.pdf",
+      mimeType: "application/pdf",
+      buffer: await fixture(),
+    });
     await expect(page.locator(".pdf-page")).toHaveCount(3);
     await expect(page.locator(".field")).toHaveCount(1);
     await page.getByRole("button", { name: "Add blank page after" }).click();
     await expect(page.locator(".pdf-page")).toHaveCount(4);
-    await page
-      .getByLabel("Replace PDF", { exact: true })
-      .setInputFiles({
-        name: "replacement.pdf",
-        mimeType: "application/pdf",
-        buffer: await fixture(),
-      });
+    await page.getByLabel("Replace entire PDF", { exact: true }).setInputFiles({
+      name: "replacement.pdf",
+      mimeType: "application/pdf",
+      buffer: await fixture(),
+    });
     await expect(page.locator(".pdf-page")).toHaveCount(2);
     await expect(page.locator(".field")).toHaveCount(0);
     expect(revision).toBe(4);
+    await page.getByLabel("Custom page range").fill("1-2");
+    await page
+      .getByRole("button", { name: "Delete custom page range", exact: true })
+      .click();
+    await expect(page.getByRole("alert")).toContainText(
+      "Keep at least one page",
+    );
+    await page.getByLabel("Custom page range").fill("1, 1");
+    await page
+      .getByRole("button", { name: "Delete custom page range", exact: true })
+      .click();
+    await expect(page.locator(".pdf-page")).toHaveCount(1);
+    expect(revision).toBe(5);
     await page.screenshot({
       path: `/tmp/esign-pdf-editor-${viewport.width}.png`,
       fullPage: true,
     });
+    await page
+      .getByRole("button", { name: "← Back to documents", exact: true })
+      .click();
+    await expect(
+      page.getByRole("heading", { name: /All documents/ }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /PDF Editable.pdf/ }).click();
+    await expect(page.getByLabel("Field signer")).toBeVisible();
+    await expect(page.locator(".pdf-page")).toHaveCount(1);
   });

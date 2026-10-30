@@ -207,7 +207,9 @@ The build job also targets the `github-pages` Environment. If you already added 
 
 ## Draft PDF page editing
 
-The field signer, Signature and Date controls stay in a sticky left sidebar on desktop and a sticky top panel on narrow screens. Draft-only PDF editing supports deleting a selected page, inserting a blank page after it, appending another unencrypted PDF, and replacing the PDF. Limits remain 100 pages and 10 MB. This edits page structure, not existing PDF text or graphics.
+Opening a document hides the document list and opens a dedicated editor. The filename, instructions, signer, fields and page controls live in a left toolbar; the PDF/signing panel scrolls independently. On narrow screens the toolbar appears above the PDF with its own scroll area. Use **Back to documents** to return to the list. Fields have visible red × delete buttons and a matching list with Delete actions in the toolbar. Clicking the body of a field does not delete it.
+
+Draft-only PDF editing supports deleting a selected page or a custom range such as `1-3, 4, 7`, inserting a blank page after it, appending another unencrypted PDF, and replacing the PDF. Limits remain 100 pages and 10 MB. This edits page structure, not existing PDF text or graphics.
 
 Edits save immediately as a new private Storage object. Deleting pages removes their fields and renumbers later fields; blank-page insertion shifts later fields; append preserves layouts; replacement clears all fields. Every PDF change clears the current company signature and consent so the edited version must be reviewed and signed again. Previously sent/completed documents are locked; revoke an outstanding invitation to return to a draft before editing. Prior file revisions remain private for audit/reconciliation; there is no revision-restore UI in this MVP.
 
@@ -221,3 +223,15 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 `202610300001_draft_pdf_editing.sql` adds service-only, version-checked draft edits and prevents issuing an invitation from an obsolete source PDF. No new secrets are needed. If another tab edits the draft or issues an invitation first, the stale operation fails and the admin must refresh. Storage uploads whose database commit is ambiguous are retained for operator reconciliation; do not delete referenced revisions blindly.
 
 The approved eSign app icon is stored in `public/esign-icon.png` and used in the site header and browser icon, with the wordmark **Ready Ready eSign** and attribution **by Ready Ready Motors, Inc.** The original company logo remains available at `public/r_logo.jpg`. Both images are served locally using the Vite base path, including on GitHub Pages.
+
+### Custom page ranges backend update
+
+Custom ranges accept individual pages and ascending inclusive ranges separated by commas. Duplicate/overlapping pages are counted once, invalid/out-of-bounds entries fail before editing, and deleting every page is refused. The confirmation shows the exact page numbers. Deleted-page fields are removed and surviving field page numbers are updated.
+
+If the previous PDF editing migration is already deployed, this update needs only a fresh `esign` Edge Function deployment from the latest source; no additional SQL migration or Gmail reauthorization is needed:
+
+```sh
+npx supabase functions deploy esign --no-verify-jwt --use-api
+```
+
+The frontend displays custom range controls only when the backend reports support. **Replace entire PDF** replaces the whole draft and clears its fields/current company signature; **Append PDF** adds all pages of another PDF at the end while retaining existing fields.

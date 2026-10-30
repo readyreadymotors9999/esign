@@ -218,6 +218,7 @@ Deno.serve(async (request) => {
         documentId: form.get("documentId"),
         operation: form.get("operation"),
         page: Number(form.get("page")),
+        range: form.get("range"),
         expectedPath: form.get("expectedPath"),
         file: form.get("file"),
       };
@@ -351,6 +352,7 @@ Deno.serve(async (request) => {
           body.page,
           body.fields,
           addition,
+          body.range,
         );
       } catch (e) {
         if (e instanceof ValidationError) throw e;
@@ -374,6 +376,7 @@ Deno.serve(async (request) => {
         p_metadata: {
           operation: body.operation,
           page: body.page,
+          range: body.range,
           pages: edited.pages,
           previous_path: doc.original_path,
           new_path: path,
@@ -435,7 +438,7 @@ Deno.serve(async (request) => {
         .order("created_at");
       check(error);
       return json({
-        capabilities: { pdfEditing: true },
+        capabilities: { pdfEditing: true, pdfPageRanges: true },
         document: doc,
         audit: data,
         url:

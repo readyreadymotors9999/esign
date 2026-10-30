@@ -819,3 +819,245 @@ main {
     padding: 8px 10px;
   }
 }
+/* A document opens as its own workspace with independent tools and PDF scroll. */
+main:has(.document-open) {
+  height: calc(100dvh - 90px);
+  min-height: 0;
+  padding: 16px 3%;
+  overflow: hidden;
+}
+body:has(.document-open) footer {
+  display: none;
+}
+.admin-workspace.document-open {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.document-open > .notice {
+  flex: none;
+  margin: 0 0 10px;
+  padding: 8px 14px;
+}
+.workspace.single-document {
+  display: block;
+  flex: 1;
+  min-height: 0;
+}
+.single-document .document-panel {
+  height: 100%;
+  min-height: 0;
+}
+.single-document .editor {
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 20px;
+  overflow: hidden;
+}
+.document-sidebar {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: white;
+  border: 1px solid #e3e9e9;
+  border-radius: 12px;
+  padding: 18px;
+}
+.document-sidebar > .split {
+  margin: 16px 0;
+}
+.document-sidebar h2 {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.document-sidebar .rename {
+  display: block;
+}
+.document-sidebar .rename label {
+  margin: 0;
+}
+.document-sidebar .rename button {
+  margin-top: 10px;
+  width: 100%;
+}
+.document-sidebar > p {
+  font-size: 12px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.document-sidebar .pdf-tools {
+  position: static;
+  top: auto;
+  max-height: none;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  box-shadow: none;
+  padding: 0;
+  margin: 18px 0 0;
+  background: transparent;
+}
+.document-sidebar .pdf-tools > small {
+  font-size: 11px;
+}
+.document-sidebar .back-documents {
+  width: 100%;
+  font-size: 12px;
+}
+.document-scroll {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: #eaf0ef;
+  border: 1px solid #dde5e3;
+  border-radius: 12px;
+  padding: 20px;
+}
+.document-scroll .send-form,
+.document-scroll .audit {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+}
+.document-scroll .pdf-pages {
+  overflow: visible;
+  height: auto;
+  padding: 0;
+}
+.field-inventory {
+  border-top: 1px solid #dce4e2;
+  padding-top: 12px;
+  width: 100%;
+}
+.field-inventory h3 {
+  margin: 0 0 8px;
+}
+.field-inventory-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1ef;
+  font-size: 11px;
+}
+.field-inventory-row small {
+  display: block;
+  font-size: 10px;
+}
+.danger-link {
+  background: #fff0ec;
+  color: #a1392c;
+  font-size: 11px;
+  padding: 6px 8px;
+}
+.danger-link:hover {
+  background: #ffe0d8;
+}
+.pdf-page .field {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  padding: 0 20px 0 3px;
+}
+.field-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.pdf-page .field .field-remove {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 50%;
+  background: #b7352c;
+  color: white;
+  padding: 0;
+  font: 700 19px/24px sans-serif;
+  box-shadow: 0 1px 4px #0003;
+  z-index: 2;
+}
+.field-remove:hover {
+  background: #8d211b;
+}
+.range-delete {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid #dce4e2;
+  border-bottom: 1px solid #dce4e2;
+}
+.range-delete input {
+  font-size: 12px;
+  padding: 8px;
+}
+.range-error {
+  color: #a1392c !important;
+}
+@media (max-width: 700px) {
+  main:has(.document-open) {
+    height: calc(100dvh - 76px);
+    padding: 10px 3%;
+  }
+  .single-document .editor {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .document-sidebar {
+    flex: 0 0 auto;
+    max-height: 36dvh;
+    padding: 12px;
+  }
+  .document-scroll {
+    flex: 1;
+    padding: 12px;
+  }
+  .document-sidebar .pdf-tools {
+    display: flex;
+  }
+  .document-sidebar .page-tools {
+    display: flex;
+  }
+  .document-sidebar .page-tools small {
+    display: block;
+  }
+  .document-sidebar .rename {
+    display: flex;
+    align-items: end;
+  }
+  .document-sidebar .rename label {
+    min-width: 0;
+  }
+  .document-sidebar .rename button {
+    width: auto;
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 11px 8px;
+  }
+  .document-sidebar .page-tools small {
+    font-size: 10px;
+  }
+  .pdf-page .field .field-remove {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    line-height: 28px;
+    right: -12px;
+    top: -12px;
+  }
+}

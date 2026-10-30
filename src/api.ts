@@ -52,6 +52,7 @@ export async function editDocumentPdf(
   page: number,
   fields: Field[],
   file?: File,
+  range?: string,
 ) {
   const {
     data: { session },
@@ -63,6 +64,7 @@ export async function editDocumentPdf(
   form.set("operation", operation);
   form.set("page", String(page));
   form.set("fields", JSON.stringify(fields));
+  if (range) form.set("range", range);
   if (file) form.set("file", file);
   const response = await fetch(`${url}/functions/v1/esign`, {
     method: "POST",
