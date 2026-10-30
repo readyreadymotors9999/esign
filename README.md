@@ -329,4 +329,11 @@ The dashboard restores its last known list/counts after a browser reload, then s
 
 List reads use the Supabase Data API directly with the existing authenticated owner/admin RLS policy, selecting only `id,title,status,created_at`. This avoids an Edge Function cold start and its extra authentication round trip for dashboard reads. Private PDF access and mutations continue through the Edge Function. No new database policy, migration or backend deployment is required.
 
-PDF rendering code loads only when a PDF is opened. The production build's initial compressed JavaScript dropped from approximately 274 KB to 139 KB; the separate PDF viewer chunk loads on demand. Network and authentication timing still depend on the client and service availability, while cached lists stay visible during revalidation.
+PDF rendering code is split out of the initial dashboard bundle. Once the list appears, it is prepared during browser idle time, or earlier when a document receives pointer/keyboard focus. The production build's initial compressed JavaScript dropped from approximately 274 KB to 139 KB; the separate PDF viewer chunk loads on demand. Network and authentication timing still depend on the client and service availability, while cached lists stay visible during revalidation.
+
+
+### Preparing the PDF viewer before a document opens
+
+The dashboard schedules PDF viewer preparation after its list is ready, using browser idle time (with a short timeout fallback). Hovering or focusing a document also starts preparation. Module requests are shared, so these hints and the eventual document open do not download the renderer repeatedly. Preparation also starts the PDF worker; opened documents share that worker explicitly, while each document's loading task and private data are destroyed when its viewer closes. A full browser reload starts a new worker. Failed worker initialization is discarded so a later open can retry.
+
+Preparation downloads only public application code, never document PDFs or signing URLs. The initial dashboard still benefits from code splitting, while normal document opens can reuse already prepared code and the worker. Actual PDF download, decoding and page drawing still depend on file size and device/network conditions. No Supabase deployment is needed.

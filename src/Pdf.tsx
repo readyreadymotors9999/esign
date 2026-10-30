@@ -6,6 +6,22 @@ import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { Field } from "./api";
 import { Loading } from "./Loading";
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
+let rendererWorker: pdfjs.PDFWorker | undefined;
+function getRendererWorker() {
+  if (!rendererWorker || rendererWorker.destroyed) {
+    const created = new pdfjs.PDFWorker();
+    rendererWorker = created;
+    void created.promise.catch(() => {
+      created.destroy();
+      if (rendererWorker === created) rendererWorker = undefined;
+    });
+  }
+  return rendererWorker;
+}
+export async function preparePdfRenderer() {
+  await getRendererWorker().promise;
+}
+
 export function Pdf({
   url,
   fields,
@@ -163,7 +179,7 @@ export function Pdf({
     setMenuField(undefined);
     setError("");
     let active = true;
-    const task = pdfjs.getDocument({ url });
+    const task = pdfjs.getDocument({ url, worker: getRendererWorker() });
     task.promise
       .then((document) => {
         if (active) setPdf(document);

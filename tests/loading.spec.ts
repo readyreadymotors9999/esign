@@ -25,6 +25,11 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     created_at: new Date().toISOString(),
   };
   let listGate = initial;
+  let workerRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("pdf.worker") && !request.url().includes("?url"))
+      workerRequests++;
+  });
   await page.addInitScript(() =>
     localStorage.setItem(
       "sb-test-auth-token",
@@ -88,6 +93,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   initialRelease();
   await expect(all.locator(".count")).toHaveText("1");
   await expect(page.locator(".doc-row")).toHaveCount(1);
+  await expect.poll(() => workerRequests).toBe(1);
   listGate = refreshing;
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(
@@ -199,6 +205,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   let reloadRelease!: () => void;
   listGate = new Promise<void>((resolve) => (reloadRelease = resolve));
   doc.title = "Server changed during reload.pdf";
+  expect(workerRequests).toBe(1);
   await page.reload();
   await expect(all.locator(".count")).toHaveText("1");
   await expect(page.locator(".doc-row")).toContainText("Updated agreement.pdf");
@@ -212,4 +219,5 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   await expect(page.locator(".doc-row")).toContainText(
     "Server changed during reload.pdf",
   );
+  await expect.poll(() => workerRequests).toBe(2);
 });

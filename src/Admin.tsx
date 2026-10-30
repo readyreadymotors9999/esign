@@ -7,7 +7,7 @@ import {
   type DocumentSummary,
   type Field,
 } from "./api";
-import { PdfPreview as Pdf } from "./PdfPreview";
+import { PdfPreview as Pdf, prefetchPdfPreview } from "./PdfPreview";
 import { Loading } from "./Loading";
 import { createPortal } from "react-dom";
 import { type SignatureMethod } from "./Signature";
@@ -125,6 +125,18 @@ export default function Admin({
       if (request === listRequest.current) setDocsLoading(false);
     }
   }
+  useEffect(() => {
+    if (!docsLoaded) return;
+    const warm = () => {
+      void prefetchPdfPreview().catch(() => {});
+    };
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(warm, { timeout: 1500 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(warm, 600);
+    return () => clearTimeout(id);
+  }, [docsLoaded]);
   async function refreshRecipients() {
     const data = await api("recipients");
     setRecipients(data.recipients);
@@ -456,6 +468,12 @@ export default function Admin({
                   disabled={busy}
                   className="doc-row"
                   key={doc.id}
+                  onPointerEnter={() => {
+                    void prefetchPdfPreview().catch(() => {});
+                  }}
+                  onFocus={() => {
+                    void prefetchPdfPreview().catch(() => {});
+                  }}
                   onClick={() =>
                     task(async () => {
                       setShare("");
