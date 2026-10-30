@@ -16,6 +16,12 @@ export function Pdf({
   toolsHost,
   externalTools = false,
   rangeEditing = false,
+  onFieldActivate,
+  updateField,
+  duplicateField,
+  signaturePreviews = {},
+  datePreviews = {},
+  signerNames = {},
 }: {
   url: string;
   fields: Field[];
@@ -32,7 +38,15 @@ export function Pdf({
   toolsHost?: HTMLElement | null;
   externalTools?: boolean;
   rangeEditing?: boolean;
+  onFieldActivate?: (index: number, field: Field) => void;
+  updateField?: (index: number, patch: Partial<Field>) => void;
+  duplicateField?: (index: number) => void;
+  signaturePreviews?: Partial<Record<"company" | "recipient", string>>;
+  datePreviews?: Partial<Record<"company" | "recipient", string>>;
+  signerNames?: Partial<Record<"company" | "recipient", string>>;
 }) {
+  const [activeField, setActiveField] = useState<number>();
+  const [menuField, setMenuField] = useState<number>();
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
   const [error, setError] = useState("");
   const [signer, setSigner] = useState<"company" | "recipient">("company");
@@ -48,6 +62,8 @@ export function Pdf({
     rendered.current.clear();
     onReady?.(false);
     setPdf(undefined);
+    setActiveField(undefined);
+    setMenuField(undefined);
     setError("");
     let active = true;
     const task = pdfjs.getDocument({ url });
@@ -87,7 +103,9 @@ export function Pdf({
           onChange={(e) => setSigner(e.target.value as "company" | "recipient")}
         >
           <option value="company">Lichen Wang</option>
-          <option value="recipient">Recipient</option>
+          <option value="recipient">
+            {signerNames.recipient || "Recipient"}
+          </option>
         </select>
       </label>
       <span>Place field</span>
@@ -104,31 +122,9 @@ export function Pdf({
         Date
       </button>
       <small>
-        Click a page to place a field. Use the red × or a Delete button below to
-        remove it.
+        Click a field to sign or select it. Use its signer selector or settings
+        menu to reassign, duplicate, or delete it.
       </small>
-      {fields.length > 0 && (
-        <div className="field-inventory">
-          <h3>Placed fields ({fields.length})</h3>
-          {fields.map((f, i) => (
-            <div className="field-inventory-row" key={i}>
-              <span>
-                {f.signer === "company" ? "Lichen" : "Recipient"} · {f.type}
-                <small>Page {f.page}</small>
-              </span>
-              <button
-                type="button"
-                className="danger-link"
-                disabled={busy}
-                aria-label={`Delete placed field ${i + 1} on page ${f.page}`}
-                onClick={() => remove?.(i)}
-              >
-                Delete
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
       {onEdit && pdf && (
         <div className="page-tools">
           <h3>Edit PDF</h3>
@@ -284,6 +280,38 @@ export function Pdf({
               type={type}
               onRendered={pageReady}
               onFailure={pageError}
+              activeField={activeField}
+              menuField={menuField}
+              onMenu={(index) =>
+                setMenuField(menuField === index ? undefined : index)
+              }
+              onActivate={(index, field) => {
+                setActiveField(index);
+                setMenuField(undefined);
+                onFieldActivate?.(index, field);
+              }}
+              updateField={updateField}
+              duplicateField={
+                duplicateField
+                  ? (index) => {
+                      duplicateField(index);
+                      setActiveField(fields.length);
+                      setMenuField(undefined);
+                    }
+                  : undefined
+              }
+              onDelete={
+                remove
+                  ? (index) => {
+                      remove(index);
+                      setActiveField(undefined);
+                      setMenuField(undefined);
+                    }
+                  : undefined
+              }
+              signaturePreviews={signaturePreviews}
+              datePreviews={datePreviews}
+              signerNames={signerNames}
             />
           ))}
       </div>
@@ -299,6 +327,16 @@ function Page({
   type,
   onRendered,
   onFailure,
+  activeField,
+  menuField,
+  onMenu,
+  onActivate,
+  updateField,
+  duplicateField,
+  onDelete,
+  signaturePreviews,
+  datePreviews,
+  signerNames,
 }: {
   pdf: pdfjs.PDFDocumentProxy;
   page: number;
@@ -308,6 +346,16 @@ function Page({
   type: Field["type"];
   onRendered: (page: number) => void;
   onFailure: () => void;
+  activeField?: number;
+  menuField?: number;
+  onMenu: (index: number) => void;
+  onActivate: (index: number, field: Field) => void;
+  updateField?: (index: number, patch: Partial<Field>) => void;
+  duplicateField?: (index: number) => void;
+  onDelete?: (index: number) => void;
+  signaturePreviews: Partial<Record<"company" | "recipient", string>>;
+  datePreviews: Partial<Record<"company" | "recipient", string>>;
+  signerNames: Partial<Record<"company" | "recipient", string>>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [ratio, setRatio] = useState(1.294);
@@ -362,45 +410,107 @@ function Page({
       }}
     >
       <canvas ref={canvas} />
-      {fields.map(
-        (f, i) =>
-          f.page === page && (
-            <div
-              key={i}
-              className={`field ${f.type} ${f.signer || "recipient"}`}
-              style={{
-                left: `${f.x * 100}%`,
-                top: `${f.y * 100}%`,
-                width: `${f.width * 100}%`,
-                height: `${f.height * 100}%`,
-              }}
+      {fields.map((f, i) => {
+        if (f.page !== page) return null;
+        const owner = f.signer || "recipient",
+          preview =
+            f.type === "signature"
+              ? signaturePreviews[owner]
+              : datePreviews[owner];
+        return (
+          <div
+            key={i}
+            className={`field ${f.type} ${owner} ${activeField === i ? "selected-field" : ""} ${preview ? "filled-field" : ""}`}
+            style={{
+              left: `${f.x * 100}%`,
+              top: `${f.y * 100}%`,
+              width: `${f.width * 100}%`,
+              height: `${f.height * 100}%`,
+            }}
+            role="group"
+            aria-label={`${f.type} field on page ${page}`}
+          >
+            <button
+              type="button"
+              className="field-content"
+              aria-label={`Open ${owner} ${f.type} field ${i + 1} on page ${page}`}
               onClick={(e) => {
                 e.stopPropagation();
+                onActivate(i, f);
               }}
-              role="group"
-              aria-label={`${f.type} field on page ${page}`}
             >
-              <span className="field-label">
-                {f.signer === "company" ? "Lichen · " : "Recipient · "}
-                {f.type === "signature" ? "Signature" : "Date (UTC)"}
-              </span>
-              {remove && (
+              {preview ? (
+                f.type === "signature" ? (
+                  <img
+                    src={preview}
+                    alt={`${signerNames[owner] || owner} signature preview`}
+                  />
+                ) : (
+                  <span className="date-value">{preview}</span>
+                )
+              ) : (
+                <span className="field-label">
+                  {signerNames[owner] ||
+                    (owner === "company" ? "Lichen Wang" : "Recipient")}{" "}
+                  · {f.type === "signature" ? "Signature" : "Date"}
+                </span>
+              )}
+            </button>
+            {updateField && activeField === i && (
+              <div
+                className={`field-controls ${f.y < 0.1 ? "below" : ""} ${f.x > 0.3 ? "align-right" : ""}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <select
+                  aria-label={`Signer for field ${i + 1}`}
+                  value={owner}
+                  onChange={(e) =>
+                    updateField(i, {
+                      signer: e.target.value as "company" | "recipient",
+                    })
+                  }
+                >
+                  <option value="company">Lichen Wang</option>
+                  <option value="recipient">
+                    {signerNames.recipient || "Recipient"}
+                  </option>
+                </select>
                 <button
                   type="button"
-                  className="field-remove"
-                  aria-label={`Delete ${f.type} field on page ${page}`}
-                  title="Delete field"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(i);
-                  }}
+                  className="field-settings"
+                  aria-label={`Field settings ${i + 1}`}
+                  aria-expanded={menuField === i}
+                  onClick={() => onMenu(i)}
                 >
-                  ×
+                  ⚙
                 </button>
-              )}
-            </div>
-          ),
-      )}
+                {menuField === i && (
+                  <div className="field-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        duplicateField?.(i);
+                        onMenu(i);
+                      }}
+                    >
+                      Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="danger-link"
+                      onClick={() => onDelete?.(i)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
       <span className="page-number">Page {page}</span>
     </div>
   );

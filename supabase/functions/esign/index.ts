@@ -1,3 +1,4 @@
+import { signingDate, SIGNING_TIME_ZONE } from "../_shared/date.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
 import { PDFDocument } from "pdf-lib";
 import {
@@ -116,6 +117,47 @@ async function documentFor(id: string, owner?: string) {
   if (!data) fail("Document not found.", 404);
   return data;
 }
+async function persistRecipient(owner: string, body: any) {
+  const email = emailAddress(body.email);
+  for (const value of [body.firstName, body.lastName])
+    if (typeof value !== "string" || value.length > 100)
+      fail("Use recipient names up to 100 characters.");
+  if (!body.firstName.trim()) fail("Enter the recipient's first name.");
+  const record = {
+    owner_id: owner,
+    email,
+    first_name: body.firstName.trim(),
+    last_name: body.lastName.trim(),
+  };
+  let result;
+  if (body.recipientId) {
+    if (
+      typeof body.recipientId !== "string" ||
+      !/^[a-f0-9-]{36}$/.test(body.recipientId)
+    )
+      fail("Invalid recipient ID.");
+    result = await db
+      .from("recipients")
+      .update(record)
+      .eq("id", body.recipientId)
+      .eq("owner_id", owner)
+      .select()
+      .maybeSingle();
+  } else
+    result = await db
+      .from("recipients")
+      .upsert(record, { onConflict: "owner_id,email" })
+      .select()
+      .single();
+  if (result.error?.code === "23505")
+    fail(
+      "Another saved recipient already uses this email. Select that contact or use a different email.",
+      409,
+    );
+  check(result.error);
+  if (!result.data) fail("Recipient not found.", 404);
+  return result.data;
+}
 async function complete(body: any, request: Request) {
   if (
     body.consent !== true ||
@@ -124,6 +166,10 @@ async function complete(body: any, request: Request) {
     body.name.length > 150
   )
     fail("Your full name and electronic signature consent are required.");
+  if (body.signingDate && body.signingDate !== signingDate())
+    fail(
+      "The signing date changed. Refresh and review the current date before signing.",
+    );
   const png = signaturePng(body.signature);
   const signatureMethod = signatureMethodValue(body.signatureMethod);
   const hash = await digest(tokenValue(body.token));
@@ -168,6 +214,8 @@ async function complete(body: any, request: Request) {
         consent: true,
         consent_version: "2026-10-29",
         signed_at: now,
+        signing_date: signingDate(now),
+        signing_timezone: SIGNING_TIME_ZONE,
         sha256: await digest(bytes),
         input_sha256: await digest(source),
         original_sha256: await digest(await original(doc.original_path)),
@@ -288,27 +336,8 @@ Deno.serve(async (request) => {
       check(error);
       return json({ recipients: data });
     }
-    if (body.action === "save_recipient") {
-      const email = emailAddress(body.email);
-      for (const value of [body.firstName, body.lastName])
-        if (typeof value !== "string" || value.length > 100)
-          fail("Use names up to 100 characters.");
-      const { data, error } = await db
-        .from("recipients")
-        .upsert(
-          {
-            owner_id: user.id,
-            email,
-            first_name: body.firstName.trim(),
-            last_name: body.lastName.trim(),
-          },
-          { onConflict: "owner_id,email" },
-        )
-        .select()
-        .single();
-      check(error);
-      return json({ recipient: data });
-    }
+    if (body.action === "save_recipient")
+      return json({ recipient: await persistRecipient(user.id, body) });
     if (body.action === "create") {
       if (
         typeof body.title !== "string" ||
@@ -479,6 +508,8 @@ Deno.serve(async (request) => {
         );
       if (body.consent !== true)
         fail("Lichen Wang must consent to signing this document.");
+      if (body.signingDate && body.signingDate !== signingDate())
+        fail("The signing date changed. Review today’s date before sending.");
       const companyPng = signaturePng(body.signature);
       const companyMethod = signatureMethodValue(body.signatureMethod);
       if (!["email", "share"].includes(body.delivery))
@@ -490,8 +521,17 @@ Deno.serve(async (request) => {
         body.recipientName.length > 150
       )
         fail("Enter the recipient's full name.");
-      const email = emailAddress(body.email),
-        source = await original(doc.original_path);
+      const email = emailAddress(body.email);
+      await persistRecipient(user.id, {
+        email,
+        firstName:
+          body.recipientFirstName ?? body.recipientName.trim().split(/\s+/)[0],
+        lastName:
+          body.recipientLastName ??
+          body.recipientName.trim().split(/\s+/).slice(1).join(" "),
+        recipientId: body.recipientId,
+      });
+      const source = await original(doc.original_path);
       const pdf = await PDFDocument.load(source),
         fields = twoPartyFields(body.fields, pdf.getPageCount());
       // Verify all fields map to valid page rotations before sending an invitation.
@@ -547,6 +587,8 @@ Deno.serve(async (request) => {
           consent: true,
           consent_version: "2026-10-29",
           signed_at: signedAt,
+          signing_date: signingDate(signedAt),
+          signing_timezone: SIGNING_TIME_ZONE,
           sha256: await digest(prepared),
           original_sha256: await digest(source),
           prepared_path: preparedPath,

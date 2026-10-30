@@ -1,3 +1,4 @@
+import { signingDate } from "./date.ts";
 import { PDFDocument, StandardFonts, degrees, rgb } from "pdf-lib";
 import { validateFields, placement } from "./validation.ts";
 export async function sha256(value: Uint8Array) {
@@ -24,7 +25,7 @@ export async function generateSignedPdf(
   const fields = validateFields(doc.fields, pdf.getPageCount());
   const image = await pdf.embedPng(png),
     font = await pdf.embedFont(StandardFonts.Helvetica);
-  const date = now.slice(0, 10);
+  const date = signingDate(now);
   for (const field of fields) {
     const page = pdf.getPage(field.page - 1),
       box = placement(field, page.getCropBox(), page.getRotation().angle);

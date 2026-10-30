@@ -4,17 +4,19 @@ export function Signature({
   onChange,
   onMethodChange,
   defaultName = "",
+  initialMethod = "drawn",
 }: {
   onChange: (value: string) => void;
   onMethodChange?: (method: SignatureMethod) => void;
   defaultName?: string;
+  initialMethod?: SignatureMethod;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false),
     ink = useRef(false),
     edited = useRef(false);
   const [hasInk, setHasInk] = useState(false);
-  const [method, setMethod] = useState<SignatureMethod>("drawn");
+  const [method, setMethod] = useState<SignatureMethod>(initialMethod);
   const [typedName, setTypedName] = useState(defaultName);
   useEffect(() => {
     if (!edited.current) setTypedName(defaultName);

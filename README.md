@@ -7,11 +7,11 @@ A focused, two-party electronic signature MVP for Ready Ready Motors, Inc. React
 ## What works
 
 - Approved admins sign in with Supabase email/password, upload an unencrypted PDF (10 MB, 100 pages maximum), and place up to 50 signature/date fields on any page.
-- Default company signer: **Lichen Wang**, `readyreadymotors9999@gmail.com`. The authenticated admin types or draws a signature and consents during preparation; the server applies that signature and UTC date before inviting the other signer. Both people require signature and date fields. The backend refuses to sign as Lichen from another admin email.
+- Default company signer: **Lichen Wang**, `readyreadymotors9999@gmail.com`. The authenticated admin types or draws a signature and consents during preparation; the server applies that signature and the current Los Angeles business date before inviting the other signer. Both people require signature and date fields. The backend refuses to sign as Lichen from another admin email.
 - Import a **private Google Doc** via browser Google OAuth as a PDF snapshot, or upload a PDF. Choose your own eSign filename at import and rename drafts later. The original Google Doc is never edited or made public.
 - Save recipient first/last names and email in an owner-private address book. One external recipient per document, including `@qq.com`. An invitation expires in 72 hours. Admins can revoke an outstanding invitation and return the document to draft to send a replacement.
 - Create a private share link **without sending email**, or send an email invitation **only to the external recipient**. Share links use the same 72-hour expiry, revocation and one-time completion rules; their raw token is shown only immediately after creation and is not recoverable from the database.
-- Recipients review the PDF already signed by Lichen and sign on touch devices without registering. They choose a typed-name signature (with an exact image preview) or draw by finger/mouse/stylus. Their chosen signature fills only recipient fields; dates use the server's UTC date.
+- Recipients review the PDF already signed by Lichen and sign on touch devices without registering. They choose a typed-name signature (with an exact image preview) or draw by finger/mouse/stylus. Their chosen signature fills only recipient fields; dates use the server's current Los Angeles business date in MM/DD/YYYY format.
 - A server-generated signed PDF includes a completion certificate. Private originals and signed PDFs remain in Supabase. Admins download signed PDFs and review timestamped audit events, signer consent/name, request IP metadata and SHA-256 hashes.
 - Signing completion is claimed atomically; concurrent, expired, revoked and reused tokens cannot sign again.
 
@@ -207,7 +207,7 @@ The build job also targets the `github-pages` Environment. If you already added 
 
 ## Draft PDF page editing
 
-Opening a document hides the document list and opens a dedicated editor. The filename, instructions, signer, fields and page controls live in a left toolbar; the PDF/signing panel scrolls independently. On narrow screens the toolbar appears above the PDF with its own scroll area. Use **Back to documents** to return to the list. Fields have visible red × delete buttons and a matching list with Delete actions in the toolbar. Clicking the body of a field does not delete it.
+Opening a document hides the document list and opens a dedicated editor. The filename, instructions, signer, fields and page controls live in a left toolbar; the PDF/signing panel scrolls independently. On narrow screens the toolbar appears above the PDF with its own scroll area. Use **Back to documents** to return to the list. Clicking a company signature field opens a Type/Draw dialog with explicit acceptance. The accepted image previews in all company signature fields in the current document. Date fields preview today as MM/DD/YYYY. Each selected field has a signer selector and settings menu with Duplicate/Delete; there are no overlapping Copy/Cut actions. Clicking a field does not delete it.
 
 Draft-only PDF editing supports deleting a selected page or a custom range such as `1-3, 4, 7`, inserting a blank page after it, appending another unencrypted PDF, and replacing the PDF. Limits remain 100 pages and 10 MB. This edits page structure, not existing PDF text or graphics.
 
@@ -235,3 +235,15 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 ```
 
 The frontend displays custom range controls only when the backend reports support. **Replace entire PDF** replaces the whole draft and clears its fields/current company signature; **Append PDF** adds all pages of another PDF at the end while retaining existing fields.
+
+## Field-based signing and recipient management
+
+The editor's fixed toolbar contains signer/contact details and delivery controls. Select the signer before placing fields, or select any existing field and use its adjacent signer dropdown to reassign that field. Reassignment immediately updates which preview it displays. Use the gear menu to Duplicate or Delete. Duplicate creates a new field on the same page with a small positional offset; it retains the original type and signer.
+
+Click a **Lichen Wang signature field** to open Type/Draw, review the preview, accept electronic-signature consent, and apply it across all company signature fields. The choice is remembered only within the current document editing session; nothing is stored in browser localStorage. Canceling an edit keeps the prior accepted signature. PDF page edits reset it and require acceptance again. External recipients also open their signature dialog from their PDF field. Neither dialog submits the document by itself; the admin's Send or recipient's final Agree & sign action saves the signed PDF.
+
+Dates are generated from the server clock in `America/Los_Angeles`, formatted `MM/DD/YYYY`; users cannot enter a custom date. The browser refreshes its date preview periodically. A stale submitted preview date is rejected before a signing session is claimed, so the signer can review again. ISO UTC timestamps remain in audit/certificate records for precise event timing.
+
+New recipient information is automatically saved to the owner's private address book on Send. Select a saved contact to edit its name/email, and choose **Update recipient** to save immediately, or Send to save as part of that workflow. Updating by contact ID checks owner identity; an email already used by another contact returns a conflict instead of silently overwriting that contact. Contact edits do not change previously issued invitations.
+
+This update needs a fresh `esign` Edge Function deployment from the latest source for date formatting, stale-date checks and automatic contact updates. No additional SQL migration, Gmail reconnection, or new secret is required.

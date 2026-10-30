@@ -4,7 +4,9 @@ import type { Session } from "@supabase/supabase-js";
 import { api, configured, supabase } from "./api";
 import Admin from "./Admin";
 import { Pdf } from "./Pdf";
-import { Signature, type SignatureMethod } from "./Signature";
+import { type SignatureMethod } from "./Signature";
+import { SignatureDialog } from "./SignatureDialog";
+import { useSigningDate } from "./useSigningDate";
 import "./style.css";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -142,6 +144,9 @@ function Completion() {
   );
 }
 function Signer({ token }: { token: string }) {
+  const today = useSigningDate();
+  const [showSignature, setShowSignature] = useState(false),
+    [dateApplied, setDateApplied] = useState(false);
   const [pdfReady, setPdfReady] = useState(false);
   const [data, setData] = useState<any>(),
     [error, setError] = useState(""),
@@ -164,6 +169,21 @@ function Signer({ token }: { token: string }) {
   if (done) return <Completion />;
   return (
     <div className="signer">
+      {showSignature && (
+        <SignatureDialog
+          name={name || data?.recipient_name || "Recipient"}
+          value={signature}
+          method={signatureMethod}
+          onClose={() => setShowSignature(false)}
+          onAccept={(png, method) => {
+            setSignature(png);
+            setSignatureMethod(method);
+            setConsent(true);
+            setDateApplied(true);
+            setShowSignature(false);
+          }}
+        />
+      )}
       <div className="eyebrow">READY FOR YOUR SIGNATURE</div>
       <h1>{data?.title || "Review & sign"}</h1>
       <p>Review the entire document before signing. No account required.</p>
@@ -179,7 +199,18 @@ function Signer({ token }: { token: string }) {
               Invitation for <strong>{data.email}</strong> · expires{" "}
               {new Date(data.expires_at).toLocaleString()}
             </p>
-            <Pdf url={data.url} fields={data.fields} onReady={setPdfReady} />
+            <Pdf
+              url={data.url}
+              fields={data.fields}
+              onReady={setPdfReady}
+              onFieldActivate={(_, field) => {
+                if (field.type === "signature") setShowSignature(true);
+                else setDateApplied(true);
+              }}
+              signaturePreviews={{ recipient: signature }}
+              datePreviews={{ recipient: dateApplied ? today : undefined }}
+              signerNames={{ recipient: name || "Recipient" }}
+            />
           </div>
           <form
             className="card signing-form"
@@ -193,6 +224,7 @@ function Signer({ token }: { token: string }) {
                   token,
                   signature,
                   signatureMethod,
+                  signingDate: today,
                   name,
                   consent,
                 });
@@ -216,11 +248,10 @@ function Signer({ token }: { token: string }) {
               />
             </label>
             <label>Your signature</label>
-            <Signature
-              defaultName={name}
-              onChange={setSignature}
-              onMethodChange={setSignatureMethod}
-            />
+            <p>
+              Click your signature field on the PDF to type or draw your
+              signature. Your dates use MM/DD/YYYY.
+            </p>
             <label className="consent">
               <input
                 type="checkbox"

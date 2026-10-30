@@ -7,7 +7,9 @@ import {
   type Field,
 } from "./api";
 import { Pdf } from "./Pdf";
-import { Signature, type SignatureMethod } from "./Signature";
+import { type SignatureMethod } from "./Signature";
+import { SignatureDialog } from "./SignatureDialog";
+import { useSigningDate } from "./useSigningDate";
 import { prepareGoogleImport } from "./google";
 type Recipient = {
   id: string;
@@ -35,7 +37,9 @@ export default function Admin() {
     [last, setLast] = useState(""),
     [signature, setSignature] = useState(""),
     [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("drawn"),
-    [signatureVersion, setSignatureVersion] = useState(0),
+    [showSignature, setShowSignature] = useState(false),
+    [dateApplied, setDateApplied] = useState(false),
+    [recipientId, setRecipientId] = useState(""),
     [consent, setConsent] = useState(false),
     [delivery, setDelivery] = useState<"email" | "share">("email"),
     [share, setShare] = useState(""),
@@ -43,6 +47,7 @@ export default function Admin() {
     [editingAvailable, setEditingAvailable] = useState(false),
     [pageRangesAvailable, setPageRangesAvailable] = useState(false),
     [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const today = useSigningDate();
   async function refresh() {
     const data = await api("list");
     setDocs(data.documents);
@@ -71,6 +76,12 @@ export default function Admin() {
     const data = await api("detail", { documentId: id });
     setEditingAvailable(data.capabilities?.pdfEditing === true);
     setPageRangesAvailable(data.capabilities?.pdfPageRanges === true);
+    if (selected?.id !== id) {
+      setRecipientId("");
+      setEmail("");
+      setFirst("");
+      setLast("");
+    }
     setSelected(data.document);
     setFields(data.document.fields);
     setUrl(data.url || "");
@@ -78,7 +89,8 @@ export default function Admin() {
     setRename(data.document.title);
     setSignature("");
     setSignatureMethod("drawn");
-    setSignatureVersion((v) => v + 1);
+    setShowSignature(false);
+    setDateApplied(false);
     setConsent(false);
   }
   async function upload(blob: Blob) {
@@ -112,12 +124,17 @@ export default function Admin() {
       fields,
       email,
       recipientName: `${first} ${last}`.trim(),
+      recipientId: recipientId || undefined,
+      recipientFirstName: first,
+      recipientLastName: last,
+      signingDate: today,
       signature,
       signatureMethod,
       consent,
       delivery,
     });
     setShare(result.link || "");
+    await refreshRecipients();
     await refresh();
     await show(selected!.id);
     setMessage(
@@ -137,6 +154,21 @@ export default function Admin() {
     );
   return (
     <div className={`admin-workspace ${selected ? "document-open" : ""}`}>
+      {showSignature && (
+        <SignatureDialog
+          name="Lichen Wang"
+          value={signature}
+          method={signatureMethod}
+          onClose={() => setShowSignature(false)}
+          onAccept={(png, method) => {
+            setSignature(png);
+            setSignatureMethod(method);
+            setConsent(true);
+            setDateApplied(true);
+            setShowSignature(false);
+          }}
+        />
+      )}
       {!selected && (
         <div className="heading">
           <div>
@@ -322,8 +354,7 @@ export default function Admin() {
               <span className="empty-icon">✎</span>
               <h2>Two signatures. One simple flow.</h2>
               <p>
-                Lichen Wang signs while preparing the document. Invite your
-                recipient by email or share a private signing link.
+                Invite your recipient by email or share a private signing link.
               </p>
               <div className="steps">
                 <span>01 Prepare</span>
@@ -394,62 +425,6 @@ export default function Admin() {
                   </p>
                 )}
                 <div ref={setToolsHost} />
-              </aside>
-              <div className="document-scroll">
-                {url && (
-                  <Pdf
-                    key={`${selected.id}-${selected.status}`}
-                    url={url}
-                    fields={
-                      selected.status === "completed"
-                        ? []
-                        : selected.status === "sent"
-                          ? fields.filter((f) => f.signer !== "company")
-                          : fields
-                    }
-                    place={
-                      selected.status === "draft"
-                        ? (field) => {
-                            if (!busy) setFields([...fields, field]);
-                          }
-                        : undefined
-                    }
-                    remove={
-                      selected.status === "draft"
-                        ? (i) => {
-                            if (!busy)
-                              setFields(fields.filter((_, j) => i !== j));
-                          }
-                        : undefined
-                    }
-                    externalTools
-                    toolsHost={toolsHost}
-                    rangeEditing={pageRangesAvailable}
-                    busy={busy}
-                    onEdit={
-                      selected.status === "draft" && editingAvailable
-                        ? (operation, page, file, range) =>
-                            task(async () => {
-                              await editDocumentPdf(
-                                selected.id,
-                                selected.original_path,
-                                operation,
-                                page,
-                                fields,
-                                file,
-                                range,
-                              );
-                              await show(selected.id);
-                              await refresh();
-                              setMessage(
-                                "PDF updated. Review the pages and fields, then sign again before sending.",
-                              );
-                            })
-                        : undefined
-                    }
-                    onReady={setPdfReady}
-                  />
-                )}
                 {selected.status === "draft" && (
                   <form
                     className="send-form"
@@ -467,35 +442,26 @@ export default function Admin() {
                         Lichen.
                       </small>
                     </div>
-                    <Signature
-                      key={`${selected.id}-${signatureVersion}`}
-                      defaultName="Lichen Wang"
-                      onChange={setSignature}
-                      onMethodChange={setSignatureMethod}
-                    />
-                    <label className="consent">
-                      <input
-                        type="checkbox"
-                        checked={consent}
-                        onChange={(e) => setConsent(e.target.checked)}
-                      />
-                      <span>
-                        I am Lichen Wang, have reviewed this document, and
-                        consent to this binding electronic signature for Ready
-                        Ready Motors, Inc. My signature and the current UTC date
-                        will be applied when I create the invitation.
-                      </span>
-                    </label>
+                    <p className="signer-help">
+                      Click a Lichen signature field on the PDF to choose Type
+                      or Draw. Click a date field to fill today’s date.
+                    </p>
+                    {signature && (
+                      <small className="signature-accepted">
+                        Signature accepted · {today}
+                      </small>
+                    )}
                     <h3>Recipient</h3>
                     <label>
                       Saved recipient
                       <select
-                        value=""
+                        value={recipientId}
                         onChange={(e) => {
                           const r = recipients.find(
                             (r) => r.id === e.target.value,
                           );
                           if (r) {
+                            setRecipientId(r.id);
                             setEmail(r.email);
                             setFirst(r.first_name);
                             setLast(r.last_name);
@@ -545,11 +511,13 @@ export default function Admin() {
                       disabled={busy || !email || !first.trim()}
                       onClick={() =>
                         task(async () => {
-                          await api("save_recipient", {
+                          const saved = await api("save_recipient", {
+                            recipientId: recipientId || undefined,
                             email,
                             firstName: first,
                             lastName: last,
                           });
+                          setRecipientId(saved.recipient.id);
                           await refreshRecipients();
                           setMessage(
                             "Recipient saved to your private address book.",
@@ -557,8 +525,25 @@ export default function Admin() {
                         })
                       }
                     >
-                      Save recipient
+                      {recipientId ? "Update recipient" : "Save recipient"}
                     </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() => {
+                        setRecipientId("");
+                        setEmail("");
+                        setFirst("");
+                        setLast("");
+                      }}
+                    >
+                      New recipient
+                    </button>
+                    <small className="block">
+                      New recipients are saved automatically when you send. You
+                      can edit a saved contact here and update it.
+                    </small>
                     <label>
                       Invitation delivery
                       <select
@@ -587,6 +572,114 @@ export default function Admin() {
                       the completed PDF.
                     </small>
                   </form>
+                )}
+              </aside>
+              <div className="document-scroll">
+                {url && (
+                  <Pdf
+                    key={`${selected.id}-${selected.status}`}
+                    url={url}
+                    fields={
+                      selected.status === "completed"
+                        ? []
+                        : selected.status === "sent"
+                          ? fields.filter((f) => f.signer !== "company")
+                          : fields
+                    }
+                    place={
+                      selected.status === "draft"
+                        ? (field) => {
+                            if (!busy) setFields([...fields, field]);
+                          }
+                        : undefined
+                    }
+                    remove={
+                      selected.status === "draft"
+                        ? (i) => {
+                            if (!busy)
+                              setFields(fields.filter((_, j) => i !== j));
+                          }
+                        : undefined
+                    }
+                    onFieldActivate={
+                      selected.status === "draft"
+                        ? (_, field) => {
+                            if (busy) return;
+                            if (field.signer === "company") {
+                              if (field.type === "signature")
+                                setShowSignature(true);
+                              else setDateApplied(true);
+                            }
+                          }
+                        : undefined
+                    }
+                    updateField={
+                      selected.status === "draft"
+                        ? (i, patch) => {
+                            if (!busy)
+                              setFields(
+                                fields.map((f, j) =>
+                                  i === j ? { ...f, ...patch } : f,
+                                ),
+                              );
+                          }
+                        : undefined
+                    }
+                    duplicateField={
+                      selected.status === "draft"
+                        ? (i) => {
+                            if (busy) return;
+                            if (fields.length >= 50) {
+                              setMessage(
+                                "A document can contain at most 50 fields.",
+                              );
+                              return;
+                            }
+                            const field = fields[i];
+                            setFields([
+                              ...fields,
+                              {
+                                ...field,
+                                x: Math.min(1 - field.width, field.x + 0.025),
+                                y: Math.min(1 - field.height, field.y + 0.025),
+                              },
+                            ]);
+                          }
+                        : undefined
+                    }
+                    signaturePreviews={{ company: signature }}
+                    datePreviews={{ company: dateApplied ? today : undefined }}
+                    signerNames={{
+                      company: "Lichen Wang",
+                      recipient: `${first} ${last}`.trim() || "Recipient",
+                    }}
+                    externalTools
+                    toolsHost={toolsHost}
+                    rangeEditing={pageRangesAvailable}
+                    busy={busy}
+                    onEdit={
+                      selected.status === "draft" && editingAvailable
+                        ? (operation, page, file, range) =>
+                            task(async () => {
+                              await editDocumentPdf(
+                                selected.id,
+                                selected.original_path,
+                                operation,
+                                page,
+                                fields,
+                                file,
+                                range,
+                              );
+                              await show(selected.id);
+                              await refresh();
+                              setMessage(
+                                "PDF updated. Review the pages and fields, then sign again before sending.",
+                              );
+                            })
+                        : undefined
+                    }
+                    onReady={setPdfReady}
+                  />
                 )}
                 {share && (
                   <div className="share-panel">

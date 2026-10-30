@@ -50,7 +50,7 @@ test("server-generated PDF preserves rotated pages, adds signature/date and cert
       const p = await rendered.getPage(i),
         text = await p.getTextContent();
       assert.ok(
-        text.items.some((item) => item.str === "2026-10-29"),
+        text.items.some((item) => item.str === "10/29/2026"),
         `date on page ${i}`,
       );
       const viewport = p.getViewport({ scale: 1 }),
@@ -174,8 +174,8 @@ test("recipient completion preserves the company signature and both certificates
     const text = (await p.getTextContent()).items
       .map((item) => item.str)
       .join(" ");
-    assert.match(text, /2026-10-29/);
-    assert.match(text, /2026-10-30/);
+    assert.match(text, /10\/29\/2026/);
+    assert.match(text, /10\/30\/2026/);
     const first = (await (await pdf.getPage(2)).getTextContent()).items
         .map((i) => i.str)
         .join(" "),

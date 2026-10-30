@@ -137,6 +137,10 @@ for (const delivery of ["share", "email"])
       if (b.action === "send") {
         expect(b.email).toBe("123456@qq.com");
         expect(b.recipientName).toBe("Test Recipient");
+        expect(b.recipientFirstName).toBe("Test");
+        expect(b.recipientLastName).toBe("Recipient");
+        if (delivery === "share") expect(b.recipientId).toBeUndefined();
+        saved = true;
         expect(b.fields).toHaveLength(4);
         expect(
           b.fields.filter((f: any) => f.signer === "company"),
@@ -204,24 +208,76 @@ for (const delivery of ["share", "email"])
       .locator(".pdf-page")
       .nth(1)
       .click({ position: { x: 80, y: 220 } });
+    await page
+      .getByRole("button", {
+        name: "Open company signature field 1 on page 1",
+        exact: true,
+      })
+      .click();
+    const signatureDialog = page.getByRole("dialog");
     if (delivery === "share") {
-      await page
+      await signatureDialog
         .getByRole("button", { name: "Type signature", exact: true })
         .click();
-      await expect(page.getByLabel("Type your signature name")).toHaveValue(
-        "Lichen Wang",
-      );
-      await expect(page.getByLabel("Typed signature preview")).toBeVisible();
+      await expect(
+        signatureDialog.getByLabel("Type your signature name"),
+      ).toHaveValue("Lichen Wang");
     } else await draw(page);
-    await page.getByRole("checkbox").check();
+    await signatureDialog.getByRole("checkbox").check();
+    await signatureDialog
+      .getByRole("button", { name: "Accept signature", exact: true })
+      .click();
+    await expect(page.locator(".field-content img")).toHaveCount(1);
+    await expect(page.locator(".date-value").first()).toHaveText(
+      /\d{2}\/\d{2}\/\d{4}/,
+    );
+    await page
+      .getByRole("button", { name: "Field settings 1", exact: true })
+      .click();
+    await page
+      .getByRole("menuitem", { name: "Duplicate", exact: true })
+      .click();
+    await expect(page.locator(".field")).toHaveCount(5);
+    await expect(page.locator(".field-content img")).toHaveCount(2);
+    await page
+      .getByRole("button", {
+        name: "Open company signature field 5 on page 1",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole("dialog").getByRole("button", {
+        name: delivery === "share" ? "Type signature" : "Draw signature",
+        exact: true,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await page
+      .getByRole("button", { name: "Close signature dialog", exact: true })
+      .click();
+    await page.getByLabel("Signer for field 5").selectOption("recipient");
+    await expect(page.locator(".field-content img")).toHaveCount(1);
+    await page.getByLabel("Signer for field 5").selectOption("company");
+    await expect(page.locator(".field-content img")).toHaveCount(2);
+    await page
+      .getByRole("button", { name: "Field settings 5", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+    await expect(page.locator(".field")).toHaveCount(4);
     await page.getByLabel("Recipient first name").fill("Test");
     await page.getByLabel("Recipient last name").fill("Recipient");
     await page.getByLabel("Recipient email").fill("123456@qq.com");
-    await page
-      .getByRole("button", { name: "Save recipient", exact: true })
-      .click();
-    await expect(page.getByRole("status")).toContainText("Recipient saved");
-    await page.getByLabel("Saved recipient").selectOption("recipient-1");
+    if (delivery === "email") {
+      await page
+        .getByRole("button", { name: "Save recipient", exact: true })
+        .click();
+      await expect(page.getByRole("status")).toContainText("Recipient saved");
+      await page.getByLabel("Saved recipient").selectOption("recipient-1");
+      await page.getByLabel("Recipient last name").fill("Recipient");
+      await page
+        .getByRole("button", { name: "Update recipient", exact: true })
+        .click();
+      await expect(page.getByRole("status")).toContainText("Recipient saved");
+    }
     await page.getByLabel("Invitation delivery").selectOption(delivery);
     await page
       .getByRole("button", {
@@ -297,24 +353,37 @@ for (const method of ["drawn", "typed"])
     await expect(page.getByLabel("Full legal name")).toHaveValue(
       "Test Recipient",
     );
+    await page
+      .getByRole("button", {
+        name: "Open recipient signature field 1 on page 2",
+        exact: true,
+      })
+      .click();
+    const dialog = page.getByRole("dialog");
     if (method === "typed") {
-      await page
+      await dialog
         .getByRole("button", { name: "Type signature", exact: true })
         .click();
-      await expect(page.getByLabel("Type your signature name")).toHaveValue(
+      await expect(dialog.getByLabel("Type your signature name")).toHaveValue(
         "Test Recipient",
       );
     } else await draw(page);
-    await page.getByRole("checkbox").check();
-    // Clearing is a non-submit action and invalidates both signature modes.
-    await page.getByRole("button", { name: "Clear", exact: true }).click();
+    await dialog.getByRole("checkbox").check();
+    await dialog.getByRole("button", { name: "Clear", exact: true }).click();
     await expect(
-      page.getByRole("button", { name: "Agree & sign document" }),
+      dialog.getByRole("button", { name: "Accept signature", exact: true }),
     ).toBeDisabled();
     expect(completed).toBe(false);
     if (method === "typed")
-      await page.getByLabel("Type your signature name").fill("Test Recipient");
+      await dialog
+        .getByLabel("Type your signature name")
+        .fill("Test Recipient");
     else await draw(page);
+    await dialog
+      .getByRole("button", { name: "Accept signature", exact: true })
+      .click();
+    await expect(page.locator(".field-content img")).toHaveCount(1);
+    await expect(page.locator(".date-value")).toHaveText(/\d{2}\/\d{2}\/\d{4}/);
     await page.getByRole("button", { name: "Agree & sign document" }).click();
     await expect(
       page.getByRole("heading", { name: "You’re all signed." }),
@@ -533,28 +602,26 @@ for (const viewport of [
       .last()
       .click({ position: { x: 60, y: 180 } });
     await expect(page.locator(".field")).toHaveCount(1);
-    await page
-      .getByRole("button", {
-        name: "Delete signature field on page 2",
-        exact: true,
-      })
-      .click();
-    await expect(page.locator(".field")).toHaveCount(0);
-    await page
-      .locator(".pdf-page")
-      .last()
-      .click({ position: { x: 60, y: 180 } });
-    await page
-      .getByRole("button", {
-        name: "Delete placed field 1 on page 2",
-        exact: true,
-      })
-      .click();
-    await expect(page.locator(".field")).toHaveCount(0);
-    await page
-      .locator(".pdf-page")
-      .last()
-      .click({ position: { x: 60, y: 180 } });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await page
+        .getByRole("button", {
+          name: "Open company signature field 1 on page 2",
+          exact: true,
+        })
+        .click();
+      await page
+        .getByRole("button", { name: "Close signature dialog", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "Field settings 1", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+      await expect(page.locator(".field")).toHaveCount(0);
+      await page
+        .locator(".pdf-page")
+        .last()
+        .click({ position: { x: 60, y: 180 } });
+    }
     await page.getByLabel("Selected page").selectOption("1");
     await page.getByRole("button", { name: "Delete selected page" }).click();
     await expect(page.locator(".pdf-page")).toHaveCount(1);
@@ -591,6 +658,36 @@ for (const viewport of [
       .click();
     await expect(page.locator(".pdf-page")).toHaveCount(1);
     expect(revision).toBe(5);
+    // A field at the right edge keeps its signer/settings controls inside the viewport.
+    const pdfWidth = (await page.locator(".pdf-page").first().boundingBox())!
+      .width;
+    await page
+      .locator(".pdf-page")
+      .first()
+      .click({ position: { x: pdfWidth - 30, y: 140 } });
+    await page
+      .getByRole("button", {
+        name: "Open company signature field 1 on page 1",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", { name: "Close signature dialog", exact: true })
+      .click();
+    await page.getByLabel("Signer for field 1").selectOption("recipient");
+    const ownerBox = (await page
+      .getByLabel("Signer for field 1")
+      .boundingBox())!;
+    expect(ownerBox.x).toBeGreaterThanOrEqual(0);
+    expect(ownerBox.x + ownerBox.width).toBeLessThanOrEqual(viewport.width);
+    await page
+      .getByRole("button", { name: "Field settings 1", exact: true })
+      .click();
+    await expect(
+      page.getByRole("menuitem", { name: "Delete", exact: true }),
+    ).toBeInViewport();
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+    await expect(page.locator(".field")).toHaveCount(0);
     await page.screenshot({
       path: `/tmp/esign-pdf-editor-${viewport.width}.png`,
       fullPage: true,
