@@ -343,3 +343,11 @@ Preparation downloads only public application code, never document PDFs or signi
 Field border/tint colours belong to their signer, consistently across Signature and Date: company fields are blue and recipient fields are green. Reassigning a field changes its colour immediately. Placement outlines and selected-field controls follow the same signer palette; actual signature images and finalized PDFs keep their normal signing ink.
 
 The bottom-right zoom bar shows the current scale separately from an explicit **↺ 100%** button, which resets the preview in one click on desktop or mobile. These are frontend changes and need no Supabase deployment.
+
+### Deselecting fields and reopening recent PDFs
+
+Click anywhere outside a field to remove its selection outline and hide its signer/settings row. Clicks inside the signature dialog or the field's controls retain the active field. The long field-placement instructions have been removed; the cursor preview and cancel control remain.
+
+Authenticated admin previews keep a bounded **RAM-only, two-minute** cache of recently downloaded PDFs (up to 20 MB/four files) and page bitmaps (up to 48 MB/six entries). Reopening always retrieves fresh authorized document details first. Cache keys include the document owner, ID, signing status and immutable source Storage path; bitmap keys also include page and physical rendering width. New file revisions, prepared/signed PDFs and changed sizes use different entries. Initial downloads continue to use PDF.js's normal streaming path; completed downloads and unadorned page renders can then be reused. Fields and signature choices remain separate from the cached page images.
+
+No PDF data is persisted in sessionStorage, localStorage or a service worker. Expiry and sign-out/account changes clear the RAM cache; writes from an older cache generation are ignored. Public token-based recipient previews do not use this cache. No Supabase deployment or SQL changes are needed.

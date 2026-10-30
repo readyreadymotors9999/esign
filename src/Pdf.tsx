@@ -5,6 +5,13 @@ import * as pdfjs from "pdfjs-dist";
 import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { Field } from "./api";
 import { Loading } from "./Loading";
+import {
+  pdfMemoryGeneration,
+  readPdfBytes,
+  rememberPdfBytes,
+  readPageBitmap,
+  rememberPageBitmap,
+} from "./pdfMemory";
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
 let rendererWorker: pdfjs.PDFWorker | undefined;
 function getRendererWorker() {
@@ -24,6 +31,7 @@ export async function preparePdfRenderer() {
 
 export function Pdf({
   url,
+  cacheKey,
   fields,
   place,
   remove,
@@ -50,6 +58,7 @@ export function Pdf({
   zoomHost?: HTMLElement | null;
   onChooseRecipient?: (id?: string) => void;
   recipientChoices?: { id: string; name: string; email: string }[];
+  cacheKey?: string;
   url: string;
   fields: Field[];
   place?: (field: Field) => void;
@@ -135,6 +144,18 @@ export function Pdf({
       element.removeEventListener("gesturechange", gestureChange);
     };
   }, [zoomHost, setPreviewZoom]);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (
+        (event.target as Element | null)?.closest(".field, .signature-dialog")
+      )
+        return;
+      setActiveField(undefined);
+      setMenuField(undefined);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    return () => document.removeEventListener("pointerdown", dismiss, true);
+  }, []);
   const [activeField, setActiveField] = useState<number>();
   const [menuField, setMenuField] = useState<number>();
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
@@ -179,10 +200,23 @@ export function Pdf({
     setMenuField(undefined);
     setError("");
     let active = true;
-    const task = pdfjs.getDocument({ url, worker: getRendererWorker() });
+    const generation = pdfMemoryGeneration();
+    const cached = cacheKey ? readPdfBytes(cacheKey) : undefined;
+    const task = pdfjs.getDocument({
+      ...(cached ? { data: cached } : { url }),
+      worker: getRendererWorker(),
+    });
     task.promise
       .then((document) => {
-        if (active) setPdf(document);
+        if (!active) return;
+        setPdf(document);
+        if (cacheKey && !cached)
+          void document
+            .getData()
+            .then((data) => {
+              if (active) rememberPdfBytes(cacheKey, data, generation);
+            })
+            .catch(() => {});
       })
       .catch(() => {
         if (active)
@@ -194,7 +228,7 @@ export function Pdf({
       active = false;
       void task.destroy();
     };
-  }, [url, onReady]);
+  }, [url, cacheKey, onReady]);
   const pageReady = useCallback(
     (page: number) => {
       rendered.current.add(page);
@@ -292,11 +326,6 @@ export function Pdf({
           </button>
         </div>
       )}
-      <small>
-        Click Signature or Date, then click the PDF to place one field. Click a
-        field to sign or select it. Use its signer selector or settings menu to
-        reassign, duplicate, or delete it.
-      </small>
       {onEdit && pdf && (
         <div className="page-tools">
           <h3>Edit PDF</h3>
@@ -493,6 +522,7 @@ export function Pdf({
             <Page
               key={i}
               pdf={pdf}
+              cacheKey={cacheKey}
               placementSigner={signer}
               zoom={zoom}
               page={i + 1}
@@ -555,6 +585,7 @@ export function Pdf({
 }
 function Page({
   pdf,
+  cacheKey,
   placementSigner,
   zoom,
   page,
@@ -576,6 +607,7 @@ function Page({
   signerNames,
 }: {
   pdf: pdfjs.PDFDocumentProxy;
+  cacheKey?: string;
   placementSigner: "company" | "recipient";
   zoom: number;
   page: number;
@@ -663,6 +695,22 @@ function Page({
     if (!pixelWidth) return;
     let cancelled = false;
     let render: pdfjs.RenderTask | undefined;
+    const generation = pdfMemoryGeneration();
+    const bitmapKey = cacheKey
+      ? `${cacheKey}:page:${page}:pixels:${pixelWidth}`
+      : undefined;
+    const cached = bitmapKey ? readPageBitmap(bitmapKey) : undefined;
+    if (cached && canvas.current) {
+      setRatio(cached.ratio);
+      setPageWidth(cached.pageWidth);
+      canvas.current.width = cached.canvas.width;
+      canvas.current.height = cached.canvas.height;
+      canvas.current.getContext("2d")!.drawImage(cached.canvas, 0, 0);
+      setPainted(true);
+      onRendered(page);
+      return;
+    }
+
     pdf
       .getPage(page)
       .then((p) => {
@@ -688,6 +736,21 @@ function Page({
             canvas.current.width = surface.width;
             canvas.current.height = surface.height;
             canvas.current.getContext("2d")!.drawImage(surface, 0, 0);
+            if (bitmapKey) {
+              const copy = document.createElement("canvas");
+              copy.width = surface.width;
+              copy.height = surface.height;
+              copy.getContext("2d")!.drawImage(surface, 0, 0);
+              rememberPageBitmap(
+                bitmapKey,
+                {
+                  canvas: copy,
+                  ratio: viewport.height / viewport.width,
+                  pageWidth: (base.width * 96) / 72,
+                },
+                generation,
+              );
+            }
             setPainted(true);
             onRendered(page);
           }
@@ -704,7 +767,7 @@ function Page({
       cancelled = true;
       render?.cancel();
     };
-  }, [pdf, page, pixelWidth, onRendered, onFailure]);
+  }, [pdf, page, pixelWidth, cacheKey, onRendered, onFailure]);
   return (
     <div
       ref={container}

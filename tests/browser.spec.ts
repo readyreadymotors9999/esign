@@ -431,6 +431,21 @@ test.describe("High density PDF preview", () => {
       await expect(page.locator(".date-value").first()).toHaveText(
         /\d{2}\/\d{2}\/\d{4}/,
       );
+      await expect(page.locator(".selected-field")).toHaveCount(1);
+      await page
+        .locator(".document-scroll")
+        .click({ position: { x: 8, y: 8 } });
+      await expect(page.locator(".selected-field")).toHaveCount(0);
+      await expect(page.locator(".field-controls")).toHaveCount(0);
+      await page
+        .getByRole("button", {
+          name: "Open company signature field 1 on page 1",
+          exact: true,
+        })
+        .click();
+      await page
+        .getByRole("button", { name: "Close signature dialog", exact: true })
+        .click();
       await page
         .getByRole("button", { name: "Field settings 1", exact: true })
         .click();
@@ -989,6 +1004,15 @@ for (const viewport of [
     await page.getByLabel("Recipient email").fill("other@qq.com");
     await page
       .getByRole("button", { name: "Close recipient editor", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: "Open company signature field 1 on page 1",
+        exact: true,
+      })
+      .click();
+    await page
+      .getByRole("button", { name: "Close signature dialog", exact: true })
       .click();
     await page.getByLabel("Signer for field 1").selectOption("recipient");
     const ownerBox = (await page

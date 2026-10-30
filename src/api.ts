@@ -23,6 +23,9 @@ export type Document = {
   fields: Field[];
   recipient_name?: string;
   original_path: string;
+  owner_id?: string;
+  prepared_path?: string | null;
+  signed_path?: string | null;
 };
 export type DocumentSummary = Pick<
   Document,

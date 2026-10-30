@@ -8,6 +8,7 @@ import {
   writeDocumentCache,
   clearDocumentCache,
 } from "./documentCache";
+import { clearPdfMemory } from "./pdfMemory";
 import AccountSettings from "./AccountSettings";
 import { PdfPreview as Pdf } from "./PdfPreview";
 import { type SignatureMethod } from "./Signature";
@@ -27,11 +28,13 @@ function App() {
       setSession(value);
       if (!value) {
         clearDocumentCache();
+        clearPdfMemory();
         setDocumentCache(null);
         return;
       }
       setDocumentCache((cached) => {
         if (cached?.owner === value.user.id) return cached;
+        clearPdfMemory();
         const documents = readDocumentCache(value.user.id);
         return documents ? { owner: value.user.id, documents } : null;
       });

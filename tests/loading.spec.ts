@@ -17,6 +17,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   pdf.addPage([600, 800]);
   const bytes = Buffer.from(await pdf.save());
   const doc = {
+    owner_id: "test",
     id: "33333333-3333-4333-8333-333333333333",
     title: "Agreement.pdf",
     status: "draft",
@@ -26,6 +27,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   };
   let listGate = initial;
   let workerRequests = 0;
+  let pdfDownloads = 0;
   page.on("request", (request) => {
     if (request.url().includes("pdf.worker") && !request.url().includes("?url"))
       workerRequests++;
@@ -47,6 +49,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     ),
   );
   await page.route("**/loading-fixture.pdf", async (route) => {
+    pdfDownloads++;
     await pdfGate;
     await route.fulfill({ contentType: "application/pdf", body: bytes });
   });
@@ -129,6 +132,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   await expect(page.getByText("Loading PDF…", { exact: true })).toHaveCount(0);
   await expect(page.locator(".pdf-page canvas")).toBeVisible();
   await expect(page.locator(".pdf-page-loading")).toHaveCount(0);
+  const originalDownloads = pdfDownloads;
   await expect(
     page.getByRole("button", { name: "Signature", exact: true }),
   ).toBeEnabled();
@@ -171,6 +175,8 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   await expect(
     page.getByLabel("Document toolbar", { exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("Loading PDF…", { exact: true })).toHaveCount(0);
+  expect(pdfDownloads).toBe(originalDownloads);
   let logoRelease!: () => void;
   listGate = new Promise<void>((resolve) => (logoRelease = resolve));
   await page
@@ -185,6 +191,17 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     page.getByText("Refreshing documents…", { exact: true }),
   ).toHaveCount(0);
   logoRelease();
+  doc.original_path = "revision.pdf";
+  await page.getByRole("button", { name: /PDF Updated agreement.pdf/ }).click();
+  await expect(page.getByText("Loading PDF…", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Signature", exact: true }),
+  ).toBeEnabled();
+  expect(pdfDownloads).toBeGreaterThan(originalDownloads);
+  await page
+    .getByRole("link", { name: "Go to documents", exact: true })
+    .click();
+
   await page
     .getByRole("link", { name: "Account settings", exact: true })
     .click();

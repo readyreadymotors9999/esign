@@ -775,6 +775,11 @@ export default function Admin({
                     <Pdf
                       key={`${selected.id}-${selected.status}`}
                       url={url}
+                      cacheKey={
+                        selected.owner_id
+                          ? `${selected.owner_id}:${selected.id}:${selected.status}:${selected.signed_path || (selected.status === "sent" ? selected.prepared_path : null) || selected.original_path}`
+                          : undefined
+                      }
                       fields={
                         selected.status === "completed"
                           ? []
