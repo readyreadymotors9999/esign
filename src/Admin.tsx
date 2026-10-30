@@ -7,6 +7,7 @@ import {
   type Field,
 } from "./api";
 import { Pdf } from "./Pdf";
+import { createPortal } from "react-dom";
 import { type SignatureMethod } from "./Signature";
 import { SignatureDialog } from "./SignatureDialog";
 import { useSigningDate } from "./useSigningDate";
@@ -53,12 +54,17 @@ export default function Admin() {
   function resizeSidebar(width: number) {
     setSidebarWidth(Math.max(280, Math.min(640, width)));
   }
+  const [recipientHost, setRecipientHost] = useState<HTMLDivElement | null>(
+    null,
+  );
   const [recipientEditor, setRecipientEditor] = useState(false);
   const [filter, setFilter] = useState("all");
   useEffect(() => {
     if (!recipientEditor) return;
     const panel = document.querySelector<HTMLElement>(".recipient-tools");
-    panel?.scrollIntoView({ block: "nearest" });
+    panel?.parentElement?.previousElementSibling?.scrollIntoView({
+      block: "nearest",
+    });
     panel
       ?.querySelector<HTMLInputElement>("input")
       ?.focus({ preventScroll: true });
@@ -467,135 +473,127 @@ export default function Admin() {
                     update. You can continue placing signature and date fields.
                   </p>
                 )}
-                {selected.status === "draft" && recipientEditor && (
-                  <section
-                    className="recipient-tools"
-                    aria-label="Manage recipient"
-                  >
-                    <div className="split">
-                      <h3>Recipient</h3>
-                      <button
-                        type="button"
-                        className="secondary"
-                        aria-label="Close recipient editor"
-                        onClick={() => setRecipientEditor(false)}
-                      >
-                        ×
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary"
-                        disabled={
-                          busy ||
-                          !first.trim() ||
-                          !email ||
-                          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-                        }
-                        onClick={() => setRecipientEditor(false)}
-                      >
-                        Done
-                      </button>
-                    </div>
-                    <label>
-                      Saved recipient
-                      <select
-                        value={recipientId}
-                        onChange={(e) => {
-                          const r = recipients.find(
-                            (r) => r.id === e.target.value,
-                          );
-                          if (!r) {
-                            setRecipientId("");
-                            setEmail("");
-                            setFirst("");
-                            setLast("");
+                {selected.status === "draft" &&
+                  recipientEditor &&
+                  recipientHost &&
+                  createPortal(
+                    <section
+                      className="recipient-tools"
+                      aria-label="Manage recipient"
+                    >
+                      <div className="split">
+                        <h3>Recipient</h3>
+                        <button
+                          type="button"
+                          className="secondary"
+                          aria-label="Close recipient editor"
+                          onClick={() => setRecipientEditor(false)}
+                        >
+                          ×
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={
+                            busy ||
+                            !first.trim() ||
+                            !email ||
+                            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
                           }
-                          if (r) {
-                            setRecipientId(r.id);
-                            setEmail(r.email);
-                            setFirst(r.first_name);
-                            setLast(r.last_name);
-                          }
-                        }}
-                      >
-                        <option value="">Add new recipient…</option>
-                        {recipients.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.first_name} {r.last_name} · {r.email}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="name-fields">
+                          onClick={() => setRecipientEditor(false)}
+                        >
+                          Done
+                        </button>
+                      </div>
                       <label>
-                        Recipient first name
+                        Saved recipient
+                        <select
+                          value={recipientId}
+                          onChange={(e) => {
+                            const r = recipients.find(
+                              (r) => r.id === e.target.value,
+                            );
+                            if (!r) {
+                              setRecipientId("");
+                              setEmail("");
+                              setFirst("");
+                              setLast("");
+                            }
+                            if (r) {
+                              setRecipientId(r.id);
+                              setEmail(r.email);
+                              setFirst(r.first_name);
+                              setLast(r.last_name);
+                            }
+                          }}
+                        >
+                          <option value="">Add new recipient…</option>
+                          {recipients.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.first_name} {r.last_name} · {r.email}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="name-fields">
+                        <label>
+                          Recipient first name
+                          <input
+                            required
+                            maxLength={100}
+                            value={first}
+                            onChange={(e) => setFirst(e.target.value)}
+                          />
+                        </label>
+                        <label>
+                          Recipient last name
+                          <input
+                            maxLength={100}
+                            value={last}
+                            onChange={(e) => setLast(e.target.value)}
+                          />
+                        </label>
+                      </div>
+                      <label>
+                        Recipient email
                         <input
                           required
-                          maxLength={100}
-                          value={first}
-                          onChange={(e) => setFirst(e.target.value)}
+                          type="email"
+                          placeholder="recipient@qq.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
                         />
                       </label>
-                      <label>
-                        Recipient last name
-                        <input
-                          maxLength={100}
-                          value={last}
-                          onChange={(e) => setLast(e.target.value)}
-                        />
-                      </label>
-                    </div>
-                    <label>
-                      Recipient email
-                      <input
-                        required
-                        type="email"
-                        placeholder="recipient@qq.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={busy || !email || !first.trim()}
-                      onClick={() =>
-                        task(async () => {
-                          const saved = await api("save_recipient", {
-                            recipientId: recipientId || undefined,
-                            email,
-                            firstName: first,
-                            lastName: last,
-                          });
-                          setRecipientId(saved.recipient.id);
-                          await refreshRecipients();
-                          setMessage(
-                            "Recipient saved to your private address book.",
-                          );
-                        })
-                      }
-                    >
-                      {recipientId ? "Update recipient" : "Save recipient"}
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary"
-                      disabled={busy}
-                      onClick={() => {
-                        setRecipientId("");
-                        setEmail("");
-                        setFirst("");
-                        setLast("");
-                      }}
-                    >
-                      New recipient
-                    </button>
-                    <small className="block">
-                      New recipients are saved automatically when you send. You
-                      can edit a saved contact here and update it.
-                    </small>
-                  </section>
-                )}
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={busy || !email || !first.trim()}
+                        onClick={() =>
+                          task(async () => {
+                            const saved = await api("save_recipient", {
+                              recipientId: recipientId || undefined,
+                              email,
+                              firstName: first,
+                              lastName: last,
+                            });
+                            setRecipientId(saved.recipient.id);
+                            await refreshRecipients();
+                            setRecipientEditor(false);
+                            setMessage(
+                              "Recipient saved to your private address book.",
+                            );
+                          })
+                        }
+                      >
+                        {recipientId ? "Update recipient" : "Save recipient"}
+                      </button>
+                      <small className="block">
+                        New recipients are saved automatically when you send.
+                        You can edit a saved contact here and update it.
+                      </small>
+                    </section>,
+                    recipientHost,
+                  )}
                 <div ref={setToolsHost} />
                 {selected.status === "draft" && (
                   <form
@@ -784,11 +782,19 @@ export default function Admin() {
                             ? `${first} ${last}`.trim()
                             : undefined,
                       }}
-                      recipientChoices={recipients.map((r) => ({
-                        id: r.id,
-                        name: `${r.first_name} ${r.last_name}`.trim(),
-                        email: r.email,
-                      }))}
+                      onRecipientHost={setRecipientHost}
+                      recipientEmail={email}
+                      recipientChoices={recipients
+                        .filter(
+                          (r) =>
+                            r.email.trim().toLowerCase() !==
+                            email.trim().toLowerCase(),
+                        )
+                        .map((r) => ({
+                          id: r.id,
+                          name: `${r.first_name} ${r.last_name}`.trim(),
+                          email: r.email,
+                        }))}
                       onChooseRecipient={(id) => {
                         const r = recipients.find((r) => r.id === id);
                         if (r) {

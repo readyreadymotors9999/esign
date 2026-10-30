@@ -250,10 +250,20 @@ test.describe("High density PDF preview", () => {
       await page
         .getByRole("button", { name: "Signature", exact: true })
         .click();
+      const target = (await page.locator(".pdf-page").first().boundingBox())!;
+      await page.mouse.move(target.x + 80, target.y + 140);
+      const ghost = page.getByTestId("field-placement-preview");
+      await expect(ghost).toHaveText("Signature");
+      const ghostBox = (await ghost.boundingBox())!;
       await page
         .locator(".pdf-page")
         .nth(0)
         .click({ position: { x: 80, y: 140 } });
+      const placed = (await page.locator(".field").first().boundingBox())!;
+      for (const key of ["x", "y", "width", "height"] as const)
+        expect(Math.abs(placed[key] - ghostBox[key])).toBeLessThanOrEqual(1);
+      await expect(page.getByTestId("field-placement-preview")).toHaveCount(0);
+
       await expect(
         page.getByRole("button", { name: "Cancel placement", exact: true }),
       ).toHaveCount(0);
@@ -280,6 +290,9 @@ test.describe("High density PDF preview", () => {
       ).toHaveCount(0);
       await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
       await page.getByLabel("Field signer").selectOption("manage");
+      await expect(
+        page.getByRole("button", { name: "New recipient", exact: true }),
+      ).toHaveCount(0);
       await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
       await page.getByLabel("Recipient email").fill("123456@qq.com");
@@ -434,6 +447,16 @@ test.describe("High density PDF preview", () => {
           .getByRole("button", { name: "Save recipient", exact: true })
           .click();
         await expect(page.getByRole("status")).toContainText("Recipient saved");
+        await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
+        await expect(
+          page
+            .getByLabel("Field signer")
+            .locator('option[value="contact:recipient-1"]'),
+        ).toHaveCount(0);
+        await expect(
+          page.getByLabel("Field signer").locator('option[value="recipient"]'),
+        ).toHaveCount(1);
+        await page.getByLabel("Field signer").selectOption("edit");
         await page.getByLabel("Saved recipient").selectOption("recipient-1");
         await page.getByLabel("Recipient last name").fill("Recipient");
         await page

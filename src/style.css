@@ -1458,3 +1458,132 @@ body:has(.document-open) footer {
   margin-top: 6px;
   display: block;
 }
+.field-placement-preview {
+  position: absolute;
+  pointer-events: none;
+  z-index: 12;
+  border: 2px dashed #187e69;
+  background: #e3f3edb3;
+  color: #166b51;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 3px;
+}
+.field-placement-preview.date {
+  border-color: #b68b2d;
+  color: #8a661a;
+  background: #fff1c5b3;
+}
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.account-actions a,
+.account-actions button {
+  font-size: 12px;
+  padding: 9px 12px;
+}
+.account-settings {
+  max-width: 1050px;
+  margin: 0 auto;
+}
+.account-settings h1 {
+  font-size: 26px;
+}
+.settings-tabs {
+  border-bottom: 1px solid #dce5e1;
+  padding: 12px 0;
+  margin-bottom: 18px;
+  font-weight: 700;
+  color: #187e69;
+}
+.recipients-card input {
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.recipients-card button {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.recipients-card > label {
+  margin-top: 20px;
+}
+.contact-editor {
+  background: #f4f8f6;
+  border: 1px solid #dce5e1;
+  padding: 18px;
+  border-radius: 8px;
+  margin: 16px 0;
+}
+.recipient-list {
+  list-style: none;
+  margin: 20px 0;
+  padding: 0;
+}
+.recipient-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e4ebe7;
+  padding: 14px 0;
+}
+.recipient-row small {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+}
+.signer-recipient-editor {
+  width: 100%;
+}
+.signer-recipient-editor .recipient-tools {
+  padding: 12px;
+  margin: 4px 0 12px;
+  background: #f2f7f5;
+  border: 1px solid #dce7e0;
+  border-radius: 8px;
+}
+@media (max-width: 700px) {
+  .account-actions {
+    gap: 4px;
+  }
+  .account-actions a,
+  .account-actions button {
+    font-size: 11px;
+    padding: 7px 8px;
+  }
+  .recipient-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .account-settings .heading {
+    align-items: flex-start;
+  }
+}
+.account-actions a {
+  background: #edf2f1;
+  color: #38535f;
+  text-decoration: none;
+}
+.account-actions {
+  flex-shrink: 0;
+}
+.account-actions a,
+.account-actions button {
+  white-space: nowrap;
+}
+.settings-label-short {
+  display: none;
+}
+@media (max-width: 700px) {
+  .settings-label-full {
+    display: none;
+  }
+  .settings-label-short {
+    display: inline;
+  }
+}

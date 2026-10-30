@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import type { Session } from "@supabase/supabase-js";
 import { api, configured, supabase } from "./api";
 import Admin from "./Admin";
+import AccountSettings from "./AccountSettings";
 import { Pdf } from "./Pdf";
 import { type SignatureMethod } from "./Signature";
 import { SignatureDialog } from "./SignatureDialog";
@@ -11,6 +12,7 @@ import "./style.css";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [hash, setHash] = useState(location.hash);
+  const [homeVersion, setHomeVersion] = useState(0);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
     const { data } = supabase.auth.onAuthStateChange((_, value) =>
@@ -27,7 +29,18 @@ function App() {
   return (
     <>
       <header>
-        <a href="#" className="brand">
+        <a
+          href="#/"
+          className="brand"
+          title="Open the home page"
+          aria-label="Go to documents"
+          onClick={(event) => {
+            event.preventDefault();
+            location.hash = "/";
+            setHash("#/");
+            setHomeVersion((value) => value + 1);
+          }}
+        >
           <img
             className="brand-logo"
             src={`${import.meta.env.BASE_URL}esign-icon.png`}
@@ -42,9 +55,22 @@ function App() {
         </a>
         <span className="header-note">Secure electronic signatures</span>
         {session && !token && (
-          <button className="secondary" onClick={() => supabase.auth.signOut()}>
-            Sign out
-          </button>
+          <div className="account-actions">
+            <a
+              href="#/settings"
+              className="button secondary"
+              aria-label="Account settings"
+            >
+              <span className="settings-label-full">Account settings</span>
+              <span className="settings-label-short">Settings</span>
+            </a>
+            <button
+              className="secondary"
+              onClick={() => supabase.auth.signOut()}
+            >
+              Sign out
+            </button>
+          </div>
         )}
       </header>
       <main>
@@ -62,7 +88,11 @@ function App() {
         ) : token ? (
           <Signer key={token} token={token} />
         ) : session ? (
-          <Admin />
+          hash === "#/settings" ? (
+            <AccountSettings />
+          ) : (
+            <Admin key={homeVersion} />
+          )
         ) : (
           <Login />
         )}

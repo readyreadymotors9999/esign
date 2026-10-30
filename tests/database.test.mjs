@@ -325,6 +325,45 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
       (await db.query("select * from public.recipients")).rows.length,
       1,
     );
+    await assert.rejects(db.exec("delete from public.recipients"));
+    await db.exec("reset role");
+    const saved = (
+      await db.query("select id from public.recipients where owner_id=$1", [
+        admin,
+      ])
+    ).rows[0];
+    await db.exec("set role service_role");
+    assert.equal(
+      (
+        await db.query(
+          "delete from public.recipients where id=$1 and owner_id=$2 returning id",
+          [saved.id, outsider],
+        )
+      ).rows.length,
+      0,
+    );
+    assert.equal(
+      (
+        await db.query(
+          "delete from public.recipients where id=$1 and owner_id=$2 returning id",
+          [saved.id, admin],
+        )
+      ).rows.length,
+      1,
+    );
+    assert.equal(
+      (await db.query("select status from public.documents where id=$1", [doc]))
+        .rows[0].status,
+      "completed",
+    );
+    assert.equal(
+      (
+        await db.query(
+          "select count(*)::int as count from public.audit_records where event='document_signed'",
+        )
+      ).rows[0].count,
+      1,
+    );
     await db.exec("reset role");
     await db.exec(`set role anon;`);
     await assert.rejects(db.exec("select * from public.signing_sessions"));

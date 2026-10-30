@@ -338,6 +338,23 @@ Deno.serve(async (request) => {
     }
     if (body.action === "save_recipient")
       return json({ recipient: await persistRecipient(user.id, body) });
+    if (body.action === "delete_recipient") {
+      if (
+        typeof body.recipientId !== "string" ||
+        !/^[a-f0-9-]{36}$/.test(body.recipientId)
+      )
+        fail("Invalid recipient ID.");
+      const { data, error } = await db
+        .from("recipients")
+        .delete()
+        .eq("id", body.recipientId)
+        .eq("owner_id", user.id)
+        .select("id")
+        .maybeSingle();
+      check(error);
+      if (!data) fail("Recipient not found.", 404);
+      return json({ deleted: true });
+    }
     if (body.action === "create") {
       if (
         typeof body.title !== "string" ||

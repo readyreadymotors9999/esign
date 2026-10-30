@@ -24,8 +24,12 @@ export function Pdf({
   signerNames = {},
   onChooseRecipient,
   recipientChoices = [],
+  recipientEmail,
+  onRecipientHost,
   zoomHost,
 }: {
+  onRecipientHost?: (host: HTMLDivElement | null) => void;
+  recipientEmail?: string;
   zoomHost?: HTMLElement | null;
   onChooseRecipient?: (id?: string) => void;
   recipientChoices?: { id: string; name: string; email: string }[];
@@ -208,7 +212,10 @@ export function Pdf({
         >
           <option value="company">Lichen Wang</option>
           {signerNames.recipient && (
-            <option value="recipient">{signerNames.recipient}</option>
+            <option value="recipient">
+              {signerNames.recipient}
+              {recipientEmail ? ` · ${recipientEmail}` : ""}
+            </option>
           )}
           {recipientChoices.map((r) => (
             <option key={r.id} value={`contact:${r.id}`}>
@@ -221,6 +228,7 @@ export function Pdf({
           <option value="manage">Add new recipient…</option>
         </select>
       </label>
+      <div className="signer-recipient-editor" ref={onRecipientHost} />
       <span>Place field</span>
       {(["signature", "date"] as const).map((fieldType) => (
         <button
@@ -591,6 +599,25 @@ function Page({
     | undefined
   >(undefined);
   const suppressClick = useRef(false);
+  const [hover, setHover] = useState<Field>();
+  const placementEnabled = !!place;
+  useEffect(() => {
+    setHover(undefined);
+  }, [placementEnabled, type, zoom]);
+  function placementAt(clientX: number, clientY: number): Field {
+    const rect = container.current!.getBoundingClientRect();
+    const width = type === "signature" ? 0.25 : 0.14;
+    const height = type === "signature" ? 0.04 : 0.028;
+    return {
+      page,
+      type,
+      width,
+      height,
+      x: Math.max(0, Math.min(1 - width, (clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1 - height, (clientY - rect.top) / rect.height)),
+    };
+  }
+
   const [ratio, setRatio] = useState(1.294);
   const [pageWidth, setPageWidth] = useState(816);
   useEffect(() => {
@@ -644,28 +671,40 @@ function Page({
         aspectRatio: `1 / ${ratio}`,
         width: Math.min(pageWidth, availableWidth || pageWidth) * zoom,
       }}
+      onPointerMove={(event) => {
+        if (
+          !place ||
+          event.pointerType === "touch" ||
+          (event.target as Element).closest(".field")
+        ) {
+          setHover(undefined);
+          return;
+        }
+        setHover(placementAt(event.clientX, event.clientY));
+      }}
+      onPointerLeave={() => setHover(undefined)}
       onClick={(event) => {
         if (!place) return;
-        const rect = event.currentTarget.getBoundingClientRect();
-        const width = type === "signature" ? 0.25 : 0.14,
-          height = type === "signature" ? 0.04 : 0.028;
-        place({
-          page,
-          type,
-          width,
-          height,
-          x: Math.max(
-            0,
-            Math.min(1 - width, (event.clientX - rect.left) / rect.width),
-          ),
-          y: Math.max(
-            0,
-            Math.min(1 - height, (event.clientY - rect.top) / rect.height),
-          ),
-        });
+        place(placementAt(event.clientX, event.clientY));
+        setHover(undefined);
       }}
     >
       <canvas ref={canvas} />
+      {place && hover && hover.type === type && (
+        <div
+          aria-hidden="true"
+          data-testid="field-placement-preview"
+          className={`field-placement-preview ${type}`}
+          style={{
+            left: `${hover.x * 100}%`,
+            top: `${hover.y * 100}%`,
+            width: `${hover.width * 100}%`,
+            height: `${hover.height * 100}%`,
+          }}
+        >
+          {type === "signature" ? "Signature" : "Date"}
+        </div>
+      )}
       {fields.map((f, i) => {
         if (f.page !== page) return null;
         const owner = f.signer || "recipient",

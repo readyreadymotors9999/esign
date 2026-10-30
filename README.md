@@ -290,3 +290,17 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 ```
 
 No database migration is needed for this centering change. The frontend deploys automatically after push to main.
+
+### Home navigation and account recipients
+
+Click the logo or wordmark to return to the documents dashboard, including when the editor is already at the home hash. **Account settings → Recipients** lists the current admin's saved contacts and supports search, add, edit and confirmed delete. Server-side deletes validate admin authentication and match both contact ID and owner ID. Contact changes/deletion do not modify existing invitations, signed PDFs or audit records.
+
+In the document editor, **Add new recipient / Edit recipient** opens the contact form directly under the Field signer selector. Save/Update closes the form. The redundant New recipient button is removed; the signer dropdown lists the current recipient only once, with name and email, rather than repeating the matching saved contact.
+
+When placing a field, a dashed outline follows the mouse or hovering stylus. Preview and click share the same normalized position/size calculation and page-edge clamping. The outline disappears after placement, cancellation or leaving the page; touch devices continue to place with a tap.
+
+Deploy the latest Edge Function to enable contact deletion; existing recipient storage needs no SQL migration:
+
+```sh
+npx supabase functions deploy esign --project-ref nyjhgexemcxfncoepudy --no-verify-jwt --use-api
+```
