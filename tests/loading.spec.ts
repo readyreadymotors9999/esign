@@ -96,8 +96,8 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     .click();
   await expect(
     page.getByText("Loading documents…", { exact: true }),
-  ).toBeVisible();
-  await expect(all.locator(".count")).toHaveText("—");
+  ).toHaveCount(0);
+  await expect(all.locator(".count")).toHaveText("1");
   await expect(page.getByText("A fresh start", { exact: true })).toHaveCount(0);
   homeRelease();
   await expect(all.locator(".count")).toHaveText("1");
@@ -122,4 +122,69 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   const rect = (await page.locator(".pdf-page").boundingBox())!;
   await page.mouse.move(rect.x + 40, rect.y + 80);
   await expect(page.getByTestId("field-placement-preview")).toBeVisible();
+  const signer = page.getByLabel("Field signer");
+  await signer.focus();
+  await expect(signer).toHaveCSS("appearance", "none");
+  await expect(signer).toHaveCSS("border-color", "rgb(138, 172, 157)");
+  expect(
+    await signer.evaluate((el) => getComputedStyle(el).backgroundPositionX),
+  ).toContain("12px");
+  await signer.press("Tab");
+  await expect(
+    page.getByRole("button", { name: "Signature", exact: true }),
+  ).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "Signature", exact: true }),
+  ).toHaveCSS("outline-color", "rgb(157, 189, 176)");
+  let backRelease!: () => void;
+  listGate = new Promise<void>((resolve) => (backRelease = resolve));
+  doc.title = "Updated agreement.pdf";
+  await page
+    .getByRole("button", { name: "← Back to documents", exact: true })
+    .click();
+  await expect(all.locator(".count")).toHaveText("1");
+  await expect(page.locator(".doc-row")).toContainText("Agreement.pdf");
+  await expect(
+    page.getByText("Loading documents…", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Refreshing documents…", { exact: true }),
+  ).toHaveCount(0);
+  backRelease();
+  await expect(page.locator(".doc-row")).toContainText("Updated agreement.pdf");
+  await page.getByRole("button", { name: /PDF Updated agreement.pdf/ }).click();
+  await expect(
+    page.getByLabel("Document toolbar", { exact: true }),
+  ).toBeVisible();
+  let logoRelease!: () => void;
+  listGate = new Promise<void>((resolve) => (logoRelease = resolve));
+  await page
+    .getByRole("link", { name: "Go to documents", exact: true })
+    .click();
+  await expect(all.locator(".count")).toHaveText("1");
+  await expect(page.locator(".doc-row")).toContainText("Updated agreement.pdf");
+  await expect(
+    page.getByText("Loading documents…", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Refreshing documents…", { exact: true }),
+  ).toHaveCount(0);
+  logoRelease();
+  await page
+    .getByRole("link", { name: "Account settings", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Account settings", exact: true }),
+  ).toBeVisible();
+  let settingsRelease!: () => void;
+  listGate = new Promise<void>((resolve) => (settingsRelease = resolve));
+  await page
+    .getByRole("link", { name: "Go to documents", exact: true })
+    .click();
+  await expect(all.locator(".count")).toHaveText("1");
+  await expect(page.locator(".doc-row")).toContainText("Updated agreement.pdf");
+  await expect(
+    page.getByText("Loading documents…", { exact: true }),
+  ).toHaveCount(0);
+  settingsRelease();
 });

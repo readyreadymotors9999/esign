@@ -19,16 +19,24 @@ type Recipient = {
   first_name: string;
   last_name: string;
 };
-export default function Admin() {
-  const [docs, setDocs] = useState<Document[]>([]),
+export default function Admin({
+  homeRequest,
+  cachedDocuments,
+  onDocumentsChange,
+}: {
+  homeRequest: number;
+  cachedDocuments?: Document[];
+  onDocumentsChange: (documents: Document[]) => void;
+}) {
+  const [docs, setDocs] = useState<Document[]>(cachedDocuments || []),
     [selected, setSelected] = useState<Document>(),
     [url, setUrl] = useState(""),
     [fields, setFields] = useState<Field[]>([]),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [audit, setAudit] = useState<any[]>([]);
-  const [docsLoaded, setDocsLoaded] = useState(false);
-  const [docsLoading, setDocsLoading] = useState(true);
+  const [docsLoaded, setDocsLoaded] = useState(cachedDocuments !== undefined);
+  const [docsLoading, setDocsLoading] = useState(cachedDocuments === undefined);
   const [openingDocument, setOpeningDocument] = useState(false);
   const [source, setSource] = useState<"pdf" | "google" | null>(null),
     [title, setTitle] = useState(""),
@@ -74,14 +82,46 @@ export default function Admin() {
       ?.focus({ preventScroll: true });
   }, [recipientEditor]);
   const today = useSigningDate();
-  async function refresh() {
-    setDocsLoading(true);
+  const detailRequest = useRef(0);
+  const listRequest = useRef(0);
+  const lastHomeRequest = useRef(homeRequest);
+  useEffect(
+    () => () => {
+      listRequest.current++;
+      detailRequest.current++;
+    },
+    [],
+  );
+  function goHome() {
+    detailRequest.current++;
+    setSelected(undefined);
+    setShare("");
+    setSource(null);
+    setMessage("");
+    setRecipientEditor(false);
+    setShowSignature(false);
+    setOpeningDocument(false);
+    if (docsLoaded) setDocsLoading(false);
+    void Promise.all([refresh(true), refreshRecipients()]).catch((e) =>
+      setMessage(e.message),
+    );
+  }
+  useEffect(() => {
+    if (lastHomeRequest.current === homeRequest) return;
+    lastHomeRequest.current = homeRequest;
+    goHome();
+  }, [homeRequest]);
+  async function refresh(silent = false) {
+    const request = ++listRequest.current;
+    if (!silent) setDocsLoading(true);
     try {
       const data = await api("list");
+      if (request !== listRequest.current) return;
       setDocs(data.documents);
+      onDocumentsChange(data.documents);
       setDocsLoaded(true);
     } finally {
-      setDocsLoading(false);
+      if (request === listRequest.current) setDocsLoading(false);
     }
   }
   async function refreshRecipients() {
@@ -89,9 +129,10 @@ export default function Admin() {
     setRecipients(data.recipients);
   }
   useEffect(() => {
-    Promise.all([refresh(), refreshRecipients()]).catch((e) =>
-      setMessage(e.message),
-    );
+    Promise.all([
+      refresh(cachedDocuments !== undefined),
+      refreshRecipients(),
+    ]).catch((e) => setMessage(e.message));
   }, []);
   async function task(fn: () => Promise<void>) {
     setBusy(true);
@@ -105,9 +146,11 @@ export default function Admin() {
     }
   }
   async function show(id: string) {
+    const request = ++detailRequest.current;
     setOpeningDocument(true);
     try {
       const data = await api("detail", { documentId: id });
+      if (request !== detailRequest.current) return false;
       setEditingAvailable(data.capabilities?.pdfEditing === true);
       setPageRangesAvailable(data.capabilities?.pdfPageRanges === true);
       if (selected?.id !== id) {
@@ -127,8 +170,9 @@ export default function Admin() {
       setShowSignature(false);
       setDateApplied(false);
       setConsent(false);
+      return true;
     } finally {
-      setOpeningDocument(false);
+      if (request === detailRequest.current) setOpeningDocument(false);
     }
   }
   async function upload(blob: Blob) {
@@ -414,8 +458,7 @@ export default function Admin() {
                   onClick={() =>
                     task(async () => {
                       setShare("");
-                      await show(doc.id);
-                      await refresh();
+                      if (await show(doc.id)) await refresh(true);
                     })
                   }
                 >
@@ -443,11 +486,7 @@ export default function Admin() {
                 <button
                   className="secondary back-documents"
                   disabled={busy}
-                  onClick={() => {
-                    setSelected(undefined);
-                    setShare("");
-                    setSource(null);
-                  }}
+                  onClick={goHome}
                 >
                   ← Back to documents
                 </button>

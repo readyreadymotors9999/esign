@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Session } from "@supabase/supabase-js";
-import { api, configured, supabase } from "./api";
+import { api, configured, supabase, type Document } from "./api";
 import Admin from "./Admin";
 import AccountSettings from "./AccountSettings";
 import { Pdf } from "./Pdf";
@@ -13,11 +13,18 @@ function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [hash, setHash] = useState(location.hash);
   const [homeVersion, setHomeVersion] = useState(0);
+  const [documentCache, setDocumentCache] = useState<{
+    owner: string;
+    documents: Document[];
+  } | null>(null);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_, value) =>
-      setSession(value),
-    );
+    const { data } = supabase.auth.onAuthStateChange((_, value) => {
+      setSession(value);
+      setDocumentCache((cached) =>
+        cached?.owner === value?.user.id ? cached : null,
+      );
+    });
     const fn = () => setHash(location.hash);
     window.addEventListener("hashchange", fn);
     return () => {
@@ -89,9 +96,20 @@ function App() {
           <Signer key={token} token={token} />
         ) : session ? (
           hash === "#/settings" ? (
-            <AccountSettings />
+            <AccountSettings key={session.user.id} />
           ) : (
-            <Admin key={homeVersion} />
+            <Admin
+              key={session.user.id}
+              homeRequest={homeVersion}
+              cachedDocuments={
+                documentCache?.owner === session.user.id
+                  ? documentCache.documents
+                  : undefined
+              }
+              onDocumentsChange={(documents) =>
+                setDocumentCache({ owner: session.user.id, documents })
+              }
+            />
           )
         ) : (
           <Login />

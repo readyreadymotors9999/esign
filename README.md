@@ -307,10 +307,17 @@ npx supabase functions deploy esign --project-ref nyjhgexemcxfncoepudy --no-veri
 
 ### Loading feedback and selected-recipient editing
 
-Document tab counts show **—** until the first successful list request, rather than a misleading zero. A spinner and Loading documents message replace the empty-state card during this request. Refresh keeps the existing rows and counts while showing Refreshing documents; an actual empty state appears only after a successful response. Returning home starts with an explicit loading state. Request failures keep any previously loaded list.
+Document tab counts show **—** until the first successful list request, rather than a misleading zero. A spinner and Loading documents message replace the empty-state card during this request. Refresh keeps the existing rows and counts while showing Refreshing documents; an actual empty state appears only after a successful response. Returning home immediately reuses the current list/counts and synchronizes silently in the background. Request failures keep any previously loaded list.
 
 Opening a document shows feedback while its metadata loads. PDF download and rendering show Loading PDF plus page placeholders until drawing finishes; field placement is enabled after every page renders. Resizing and zooming keep already rendered content visible while improving its resolution.
 
 The signer dropdown contains recipient choices and Add new recipient, without separate Edit entries. Select any recipient to reveal **Edit recipient** beneath the dropdown. The inline editor has one close control and no Done button. Save/Update uses green with white text when enabled and a muted disabled style until the required information is valid. Field placement retains the dashed cursor preview with a normal mouse cursor.
 
 This is a frontend-only update: no new SQL migration or Edge Function deployment is required.
+
+
+### Immediate returns and consistent focus styling
+
+Returning from the document editor via either Back to documents or the logo preserves the mounted workspace and its loaded document list/counts. Returning from Account settings uses an account-scoped in-memory snapshot before revalidating. Background refreshes update the list without a loading reset; manual Refresh still shows progress while preserving rows. Requests superseded by newer requests or navigation cannot reopen an old document or replace newer data. The snapshot is not written to browser storage and is cleared when authentication changes.
+
+Dropdown arrows are inset by 12px, with room reserved to their right. Controls use soft green focus styling instead of native blue focus rings, while keyboard focus remains visible. Text selection uses the same green palette. This update needs no Supabase deployment or SQL changes.
