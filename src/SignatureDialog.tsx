@@ -15,8 +15,7 @@ export function SignatureDialog({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(value),
-    [draftMethod, setDraftMethod] = useState(method),
-    [agreed, setAgreed] = useState(false);
+    [draftMethod, setDraftMethod] = useState(method);
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
@@ -52,21 +51,9 @@ export function SignatureDialog({
         onChange={setDraft}
         onMethodChange={setDraftMethod}
       />
-      <label className="consent">
-        <input
-          type="checkbox"
-          checked={agreed}
-          onChange={(e) => setAgreed(e.target.checked)}
-        />
-        <span>
-          I have reviewed this document and agree to use electronic records and
-          a binding electronic signature. Apply this signature to all fields
-          assigned to me in this document.
-        </span>
-      </label>
       <small>
-        Your selection is remembered for this document. It is securely saved
-        when the document is submitted.
+        Add signature applies this electronic signature to your assigned fields.
+        It is saved when you submit the document.
       </small>
       <div className="dialog-actions">
         <button type="button" className="secondary" onClick={onClose}>
@@ -74,10 +61,10 @@ export function SignatureDialog({
         </button>
         <button
           type="button"
-          disabled={!draft || !agreed}
+          disabled={!draft}
           onClick={() => onAccept(draft, draftMethod)}
         >
-          Accept signature
+          Add signature
         </button>
       </div>
     </dialog>

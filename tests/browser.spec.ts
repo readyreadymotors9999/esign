@@ -251,13 +251,13 @@ test.describe("High density PDF preview", () => {
       await field.scrollIntoViewIfNeeded();
       const before = (await field.boundingBox())!;
       const pageBox = (await page.locator(".pdf-page").first().boundingBox())!;
-      expect(before.width / pageBox.width).toBeCloseTo((0.28 * 2) / 3, 2);
+      expect(before.width / pageBox.width).toBeCloseTo(0.25, 2);
       const dateBox = (await page
         .locator(".field.date")
         .first()
         .boundingBox())!;
-      expect(dateBox.width / pageBox.width).toBeCloseTo(0.22 / 3, 2);
-      expect(dateBox.height / pageBox.height).toBeCloseTo(0.065 / 4, 2);
+      expect(dateBox.width / pageBox.width).toBeCloseTo(0.14, 2);
+      expect(dateBox.height / pageBox.height).toBeCloseTo(0.028, 2);
       await page.mouse.move(
         before.x + before.width / 2,
         before.y + before.height / 2,
@@ -279,6 +279,12 @@ test.describe("High density PDF preview", () => {
         })
         .click();
       const signatureDialog = page.getByRole("dialog");
+      await expect(
+        signatureDialog.getByRole("button", {
+          name: "Type signature",
+          exact: true,
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
       if (delivery === "share") {
         await signatureDialog
           .getByRole("button", { name: "Type signature", exact: true })
@@ -286,10 +292,21 @@ test.describe("High density PDF preview", () => {
         await expect(
           signatureDialog.getByLabel("Type your signature name"),
         ).toHaveValue("Lichen Wang");
-      } else await draw(page);
-      await signatureDialog.getByRole("checkbox").check();
+      } else {
+        await signatureDialog
+          .getByRole("button", { name: "Draw signature", exact: true })
+          .click();
+        await draw(page);
+      }
+      await expect(signatureDialog.getByRole("checkbox")).toHaveCount(0);
+      await expect(
+        signatureDialog.getByRole("button", {
+          name: "Add signature",
+          exact: true,
+        }),
+      ).toBeEnabled();
       await signatureDialog
-        .getByRole("button", { name: "Accept signature", exact: true })
+        .getByRole("button", { name: "Add signature", exact: true })
         .click();
       await expect(page.locator(".field-content img")).toHaveCount(1);
       await expect(page.locator(".date-value").first()).toHaveText(
@@ -451,11 +468,16 @@ for (const method of ["drawn", "typed"])
       await expect(dialog.getByLabel("Type your signature name")).toHaveValue(
         "Test Recipient",
       );
-    } else await draw(page);
-    await dialog.getByRole("checkbox").check();
+    } else {
+      await dialog
+        .getByRole("button", { name: "Draw signature", exact: true })
+        .click();
+      await draw(page);
+    }
+    await expect(dialog.getByRole("checkbox")).toHaveCount(0);
     await dialog.getByRole("button", { name: "Clear", exact: true }).click();
     await expect(
-      dialog.getByRole("button", { name: "Accept signature", exact: true }),
+      dialog.getByRole("button", { name: "Add signature", exact: true }),
     ).toBeDisabled();
     expect(completed).toBe(false);
     if (method === "typed")
@@ -464,7 +486,7 @@ for (const method of ["drawn", "typed"])
         .fill("Test Recipient");
     else await draw(page);
     await dialog
-      .getByRole("button", { name: "Accept signature", exact: true })
+      .getByRole("button", { name: "Add signature", exact: true })
       .click();
     await expect(page.locator(".field-content img")).toHaveCount(1);
     await expect(page.locator(".date-value")).toHaveText(/\d{2}\/\d{2}\/\d{4}/);
@@ -660,6 +682,59 @@ for (const viewport of [
       0,
     );
     await expect(page.getByLabel("Document filename")).toBeVisible();
+    if (viewport.width > 700) {
+      const divider = page.getByRole("separator", {
+        name: "Resize document toolbar",
+      });
+      const sidebar = page.locator(".document-sidebar");
+      expect((await sidebar.boundingBox())!.width).toBeCloseTo(400, 0);
+      const handle = (await divider.boundingBox())!;
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + 100);
+      await page.mouse.down();
+      await page.mouse.move(handle.x + handle.width / 2 + 60, handle.y + 100, {
+        steps: 5,
+      });
+      await page.mouse.up();
+      expect((await sidebar.boundingBox())!.width).toBeCloseTo(460, 0);
+      await divider.press("Home");
+      expect((await sidebar.boundingBox())!.width).toBeCloseTo(400, 0);
+    }
+    const zoom = page.getByRole("slider", { name: "PDF zoom", exact: true });
+    await expect(zoom).toHaveValue("100");
+    const baseline = (await page.locator(".pdf-page").first().boundingBox())!
+      .width;
+    await zoom.fill("150");
+    await expect
+      .poll(
+        async () =>
+          (await page.locator(".pdf-page").first().boundingBox())!.width,
+      )
+      .toBeGreaterThan(baseline * 1.45);
+    await page
+      .locator(".pdf-page")
+      .first()
+      .dispatchEvent("wheel", {
+        ctrlKey: true,
+        deltaY: 20,
+        clientX: 600,
+        clientY: 200,
+      });
+    await expect
+      .poll(async () => Number(await zoom.inputValue()))
+      .toBeLessThan(150);
+    await zoom.fill("50");
+    await expect(
+      page.getByRole("button", { name: "Zoom out", exact: true }),
+    ).toBeDisabled();
+    await zoom.fill("200");
+    await expect(
+      page.getByRole("button", { name: "Zoom in", exact: true }),
+    ).toBeDisabled();
+    await page
+      .getByRole("button", { name: "Reset PDF zoom to 100%", exact: true })
+      .click();
+    await expect(zoom).toHaveValue("100");
+
     await page
       .getByRole("button", { name: "Signature", exact: true })
       .scrollIntoViewIfNeeded();

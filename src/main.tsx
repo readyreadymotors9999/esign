@@ -151,7 +151,7 @@ function Signer({ token }: { token: string }) {
   const [data, setData] = useState<any>(),
     [error, setError] = useState(""),
     [signature, setSignature] = useState(""),
-    [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("drawn"),
+    [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("typed"),
     [consent, setConsent] = useState(false),
     [name, setName] = useState(""),
     [busy, setBusy] = useState(false),

@@ -4,7 +4,7 @@ export function Signature({
   onChange,
   onMethodChange,
   defaultName = "",
-  initialMethod = "drawn",
+  initialMethod = "typed",
 }: {
   onChange: (value: string) => void;
   onMethodChange?: (method: SignatureMethod) => void;

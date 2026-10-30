@@ -24,7 +24,9 @@ export function Pdf({
   signerNames = {},
   onChooseRecipient,
   recipientChoices = [],
+  zoomHost,
 }: {
+  zoomHost?: HTMLElement | null;
   onChooseRecipient?: (id?: string) => void;
   recipientChoices?: { id: string; name: string; email: string }[];
   url: string;
@@ -49,6 +51,69 @@ export function Pdf({
   datePreviews?: Partial<Record<"company" | "recipient", string>>;
   signerNames?: Partial<Record<"company" | "recipient", string>>;
 }) {
+  const viewer = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  const setPreviewZoom = useCallback(
+    (requested: number, point?: { x: number; y: number }) => {
+      const next = Math.max(0.5, Math.min(2, requested));
+      const previous = zoomRef.current;
+      if (next === previous) return;
+      const scroll = viewer.current?.closest<HTMLElement>(".document-scroll");
+      const rect = scroll?.getBoundingClientRect();
+      const x =
+        point && rect ? point.x - rect.left : (scroll?.clientWidth || 0) / 2;
+      const y =
+        point && rect ? point.y - rect.top : (scroll?.clientHeight || 0) / 2;
+      const left = scroll?.scrollLeft || 0,
+        top = scroll?.scrollTop || 0;
+      zoomRef.current = next;
+      setZoom(next);
+      requestAnimationFrame(() => {
+        if (scroll) {
+          scroll.scrollLeft = ((left + x) * next) / previous - x;
+          scroll.scrollTop = ((top + y) * next) / previous - y;
+        }
+      });
+    },
+    [],
+  );
+  useEffect(() => {
+    const element = viewer.current;
+    if (!element || !zoomHost) return;
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setPreviewZoom(zoomRef.current * Math.exp(-e.deltaY * 0.01), {
+        x: e.clientX,
+        y: e.clientY,
+      });
+    };
+    let start = 1;
+    const gestureStart = (e: Event) => {
+      e.preventDefault();
+      start = zoomRef.current;
+    };
+    const gestureChange = (event: Event) => {
+      event.preventDefault();
+      const e = event as Event & {
+        scale: number;
+        clientX: number;
+        clientY: number;
+      };
+      setPreviewZoom(start * e.scale, { x: e.clientX, y: e.clientY });
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
+    element.addEventListener("gesturestart", gestureStart, { passive: false });
+    element.addEventListener("gesturechange", gestureChange, {
+      passive: false,
+    });
+    return () => {
+      element.removeEventListener("wheel", wheel);
+      element.removeEventListener("gesturestart", gestureStart);
+      element.removeEventListener("gesturechange", gestureChange);
+    };
+  }, [zoomHost, setPreviewZoom]);
   const [activeField, setActiveField] = useState<number>();
   const [menuField, setMenuField] = useState<number>();
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
@@ -284,6 +349,7 @@ export function Pdf({
   ) : null;
   return (
     <div
+      ref={viewer}
       className={place && !externalTools ? "pdf-editor-layout" : "pdf-viewer"}
     >
       {externalTools
@@ -291,6 +357,48 @@ export function Pdf({
           ? createPortal(tools, toolsHost)
           : null
         : tools}
+      {zoomHost &&
+        createPortal(
+          <div
+            className="pdf-zoom-controls"
+            role="group"
+            aria-label="PDF zoom controls"
+          >
+            <button
+              type="button"
+              aria-label="Zoom out"
+              disabled={zoom <= 0.5}
+              onClick={() => setPreviewZoom(zoom - 0.1)}
+            >
+              −
+            </button>
+            <input
+              aria-label="PDF zoom"
+              type="range"
+              min={50}
+              max={200}
+              step={1}
+              value={Math.round(zoom * 100)}
+              onChange={(e) => setPreviewZoom(Number(e.target.value) / 100)}
+            />
+            <button
+              type="button"
+              aria-label="Zoom in"
+              disabled={zoom >= 2}
+              onClick={() => setPreviewZoom(zoom + 0.1)}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              aria-label="Reset PDF zoom to 100%"
+              onClick={() => setPreviewZoom(1)}
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+          </div>,
+          zoomHost,
+        )}
       <div className="pdf-pages">
         {error && <p role="alert">{error}</p>}
         {!pdf && !error && <p>Loading document…</p>}
@@ -299,6 +407,7 @@ export function Pdf({
             <Page
               key={i}
               pdf={pdf}
+              zoom={zoom}
               page={i + 1}
               fields={fields}
               place={
@@ -356,6 +465,7 @@ export function Pdf({
 }
 function Page({
   pdf,
+  zoom,
   page,
   fields,
   place,
@@ -375,6 +485,7 @@ function Page({
   signerNames,
 }: {
   pdf: pdfjs.PDFDocumentProxy;
+  zoom: number;
   page: number;
   fields: Field[];
   place?: (f: Field) => void;
@@ -396,10 +507,12 @@ function Page({
   const canvas = useRef<HTMLCanvasElement>(null);
   const container = useRef<HTMLDivElement>(null);
   const [pixelWidth, setPixelWidth] = useState(0);
+  const [availableWidth, setAvailableWidth] = useState(0);
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const measure = () =>
+    const measure = () => {
+      setAvailableWidth(element.parentElement!.clientWidth);
       setPixelWidth(
         Math.max(
           1,
@@ -408,8 +521,10 @@ function Page({
           ),
         ),
       );
+    };
     const observer = new ResizeObserver(measure);
     observer.observe(element);
+    observer.observe(element.parentElement!);
     window.addEventListener("resize", measure);
     measure();
     return () => {
@@ -480,14 +595,13 @@ function Page({
       className="pdf-page"
       style={{
         aspectRatio: `1 / ${ratio}`,
-        width: pageWidth,
-        maxWidth: "100%",
+        width: Math.min(pageWidth, availableWidth || pageWidth) * zoom,
       }}
       onClick={(event) => {
         if (!place) return;
         const rect = event.currentTarget.getBoundingClientRect();
-        const width = type === "signature" ? (0.28 * 2) / 3 : 0.22 / 3,
-          height = type === "signature" ? 0.065 / 2 : 0.065 / 4;
+        const width = type === "signature" ? 0.25 : 0.14,
+          height = type === "signature" ? 0.04 : 0.028;
         place({
           page,
           type,
@@ -591,11 +705,7 @@ function Page({
                 )
               ) : (
                 <span className="field-label">
-                  {signerNames[owner] ||
-                    (owner === "company"
-                      ? "Lichen Wang"
-                      : "Choose signer")}{" "}
-                  · {f.type === "signature" ? "Signature" : "Date"}
+                  {f.type === "signature" ? "Signature" : "Date"}
                 </span>
               )}
             </button>

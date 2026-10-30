@@ -240,7 +240,7 @@ The frontend displays custom range controls only when the backend reports suppor
 
 The editor's fixed toolbar contains signer/contact details and delivery controls. Select the signer before placing fields, or select any existing field and use its adjacent signer dropdown to reassign that field. Reassignment immediately updates which preview it displays. Use the gear menu to Duplicate or Delete. Duplicate creates a new field on the same page with a small positional offset; it retains the original type and signer.
 
-Click a **Lichen Wang signature field** to open Type/Draw, review the preview, accept electronic-signature consent, and apply it across all company signature fields. The choice is remembered only within the current document editing session; nothing is stored in browser localStorage. Canceling an edit keeps the prior accepted signature. PDF page edits reset it and require acceptance again. External recipients also open their signature dialog from their PDF field. Neither dialog submits the document by itself; the admin's Send or recipient's final Agree & sign action saves the signed PDF.
+Click a **Lichen Wang signature field** to open Type/Draw, review the preview, click **Add signature**, and apply it across all company signature fields. The choice is remembered only within the current document editing session; nothing is stored in browser localStorage. Canceling an edit keeps the prior accepted signature. PDF page edits reset it and require acceptance again. External recipients also open their signature dialog from their PDF field. Neither dialog submits the document by itself; the admin's Send or recipient's final Agree & sign action saves the signed PDF.
 
 Dates are generated from the server clock in `America/Los_Angeles`, formatted `MM/DD/YYYY`; users cannot enter a custom date. The browser refreshes its date preview periodically. A stale submitted preview date is rejected before a signing session is claimed, so the signer can review again. ISO UTC timestamps remain in audit/certificate records for precise event timing.
 
@@ -253,7 +253,7 @@ This update needs a fresh `esign` Edge Function deployment from the latest sourc
 
 Choose **Edit document & resend** on any sent, unfinished document. Confirmation invalidates its pending or in-progress signing session and clears all active signature/date values, including Lichen Wang’s. The original PDF and field layout remain editable. Accept a fresh company signature/date and Send to create a new invitation; old links cannot sign. Completed documents cannot reopen. Completion and reopening are serialized in the database; if completion commits first, editing is refused. Immutable PDF revisions and historical audit events remain private for traceability.
 
-Choose a saved recipient or enter a new contact above the field tools. The field-signer menu also lists saved contacts. Recipient fields cannot be placed until a name and email are provided. Drag existing fields to move them; a click opens the signature dialog. New signature boxes are two-thirds the previous width and half the height; date boxes are one-third the width and one-quarter the height. Existing field layouts retain their dimensions.
+Choose a saved recipient or enter a new contact above the field tools. The field-signer menu also lists saved contacts. Recipient fields cannot be placed until a name and email are provided. Drag existing fields to move them; a click opens the signature dialog. New signature boxes use 25% of the page width and 4% of its height; date boxes use 14% and 2.8%. Their placeholders read only Signature or Date. Existing field layouts retain their dimensions.
 
 **Deploy this update from the latest repository checkout:**
 
@@ -263,3 +263,12 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 ```
 
 This applies `202610300002_reopen_signing.sql` before deploying the matching function. Gmail credentials do not change. The frontend deploys automatically through GitHub Actions after push to main.
+
+
+### Preview and preparation controls
+
+The left toolbar starts at 400px on desktop. Drag the separator to resize it, or focus the separator and use Left/Right arrows; Home restores 400px. Small screens retain the stacked layout. Contact inputs and toolbar actions use compact controls; recipient details remain hidden until adding or editing through the signer menu.
+
+Use the bottom-right PDF slider or −/+ buttons for **50%–200%** zoom; click the percentage to reset to 100%. Trackpad pinch gestures over the PDF also zoom the preview (Ctrl+wheel on browsers that expose pinch as a wheel event, Safari gesture events supported). Normal two-finger scrolling continues to scroll. Field positions stay relative to the PDF and do not change when zooming. Rendering still adapts to display pixel density within a canvas memory limit.
+
+Signature dialogs default to **Type signature**. **Add signature** applies the displayed signature to the signer's fields without a separate dialog checkbox; the dialog explains this action. The server still records consent, and recipients still have the final document submission confirmation. This frontend update needs no Supabase migration or function redeployment.

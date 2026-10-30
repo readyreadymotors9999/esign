@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   api,
   supabase,
@@ -36,7 +36,7 @@ export default function Admin() {
     [first, setFirst] = useState(""),
     [last, setLast] = useState(""),
     [signature, setSignature] = useState(""),
-    [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("drawn"),
+    [signatureMethod, setSignatureMethod] = useState<SignatureMethod>("typed"),
     [showSignature, setShowSignature] = useState(false),
     [dateApplied, setDateApplied] = useState(false),
     [recipientId, setRecipientId] = useState(""),
@@ -47,6 +47,12 @@ export default function Admin() {
     [editingAvailable, setEditingAvailable] = useState(false),
     [pageRangesAvailable, setPageRangesAvailable] = useState(false),
     [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(400);
+  const [zoomHost, setZoomHost] = useState<HTMLDivElement | null>(null);
+  const dividerDrag = useRef<{ x: number; width: number } | null>(null);
+  function resizeSidebar(width: number) {
+    setSidebarWidth(Math.max(280, Math.min(640, width)));
+  }
   const [recipientEditor, setRecipientEditor] = useState(false);
   const [filter, setFilter] = useState("all");
   useEffect(() => {
@@ -99,7 +105,7 @@ export default function Admin() {
     setAudit(data.audit);
     setRename(data.document.title);
     setSignature("");
-    setSignatureMethod("drawn");
+    setSignatureMethod("typed");
     setShowSignature(false);
     setDateApplied(false);
     setConsent(false);
@@ -395,7 +401,12 @@ export default function Admin() {
         )}
         <section className="document-panel">
           {!selected ? null : (
-            <div className="card editor">
+            <div
+              className="card editor"
+              style={
+                { "--sidebar-width": `${sidebarWidth}px` } as CSSProperties
+              }
+            >
               <aside className="document-sidebar" aria-label="Document toolbar">
                 <button
                   className="secondary back-documents"
@@ -642,241 +653,298 @@ export default function Admin() {
                   </form>
                 )}
               </aside>
-              <div className="document-scroll">
-                {url && (
-                  <Pdf
-                    key={`${selected.id}-${selected.status}`}
-                    url={url}
-                    fields={
-                      selected.status === "completed"
-                        ? []
-                        : selected.status === "sent"
-                          ? fields.filter((f) => f.signer !== "company")
-                          : fields
-                    }
-                    place={
-                      selected.status === "draft"
-                        ? (field) => {
-                            if (!busy) setFields([...fields, field]);
-                          }
-                        : undefined
-                    }
-                    remove={
-                      selected.status === "draft"
-                        ? (i) => {
-                            if (!busy)
-                              setFields(fields.filter((_, j) => i !== j));
-                          }
-                        : undefined
-                    }
-                    onFieldActivate={
-                      selected.status === "draft"
-                        ? (_, field) => {
-                            if (busy) return;
-                            if (field.signer === "company") {
-                              if (field.type === "signature")
-                                setShowSignature(true);
-                              else setDateApplied(true);
-                            }
-                          }
-                        : undefined
-                    }
-                    updateField={
-                      selected.status === "draft"
-                        ? (i, patch) => {
-                            if (!busy)
-                              setFields(
-                                fields.map((f, j) =>
-                                  i === j ? { ...f, ...patch } : f,
-                                ),
-                              );
-                          }
-                        : undefined
-                    }
-                    duplicateField={
-                      selected.status === "draft"
-                        ? (i) => {
-                            if (busy) return;
-                            if (fields.length >= 50) {
-                              setMessage(
-                                "A document can contain at most 50 fields.",
-                              );
-                              return;
-                            }
-                            const field = fields[i];
-                            setFields([
-                              ...fields,
-                              {
-                                ...field,
-                                x: Math.min(1 - field.width, field.x + 0.025),
-                                y: Math.min(1 - field.height, field.y + 0.025),
-                              },
-                            ]);
-                          }
-                        : undefined
-                    }
-                    signaturePreviews={{ company: signature }}
-                    datePreviews={{ company: dateApplied ? today : undefined }}
-                    signerNames={{
-                      company: "Lichen Wang",
-                      recipient:
-                        first.trim() && email
-                          ? `${first} ${last}`.trim()
-                          : undefined,
-                    }}
-                    recipientChoices={recipients.map((r) => ({
-                      id: r.id,
-                      name: `${r.first_name} ${r.last_name}`.trim(),
-                      email: r.email,
-                    }))}
-                    onChooseRecipient={(id) => {
-                      const r = recipients.find((r) => r.id === id);
-                      if (r) {
-                        setRecipientId(r.id);
-                        setEmail(r.email);
-                        setFirst(r.first_name);
-                        setLast(r.last_name);
-                        setRecipientEditor(false);
-                        return;
+              <div
+                className="panel-divider"
+                role="separator"
+                tabIndex={0}
+                aria-label="Resize document toolbar"
+                aria-orientation="vertical"
+                aria-valuemin={280}
+                aria-valuemax={640}
+                aria-valuenow={sidebarWidth}
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  dividerDrag.current = {
+                    x: e.clientX,
+                    width:
+                      e.currentTarget.previousElementSibling!.getBoundingClientRect()
+                        .width,
+                  };
+                }}
+                onPointerMove={(e) => {
+                  if (dividerDrag.current)
+                    resizeSidebar(
+                      dividerDrag.current.width +
+                        e.clientX -
+                        dividerDrag.current.x,
+                    );
+                }}
+                onPointerUp={() => {
+                  dividerDrag.current = null;
+                }}
+                onPointerCancel={() => {
+                  dividerDrag.current = null;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                    e.preventDefault();
+                    resizeSidebar(
+                      sidebarWidth + (e.key === "ArrowRight" ? 20 : -20),
+                    );
+                  }
+                  if (e.key === "Home") resizeSidebar(400);
+                }}
+              />
+              <div className="preview-pane">
+                <div className="document-scroll">
+                  {url && (
+                    <Pdf
+                      key={`${selected.id}-${selected.status}`}
+                      url={url}
+                      fields={
+                        selected.status === "completed"
+                          ? []
+                          : selected.status === "sent"
+                            ? fields.filter((f) => f.signer !== "company")
+                            : fields
                       }
-                      if (id !== "edit") {
-                        setRecipientId("");
-                        setEmail("");
-                        setFirst("");
-                        setLast("");
+                      place={
+                        selected.status === "draft"
+                          ? (field) => {
+                              if (!busy) setFields([...fields, field]);
+                            }
+                          : undefined
                       }
-                      setRecipientEditor(true);
-                    }}
-                    externalTools
-                    toolsHost={toolsHost}
-                    rangeEditing={pageRangesAvailable}
-                    busy={busy}
-                    onEdit={
-                      selected.status === "draft" && editingAvailable
-                        ? (operation, page, file, range) =>
-                            task(async () => {
-                              await editDocumentPdf(
-                                selected.id,
-                                selected.original_path,
-                                operation,
-                                page,
-                                fields,
-                                file,
-                                range,
-                              );
-                              await show(selected.id);
-                              await refresh();
-                              setMessage(
-                                "PDF updated. Review the pages and fields, then sign again before sending.",
-                              );
-                            })
-                        : undefined
-                    }
-                    onReady={setPdfReady}
-                  />
-                )}
-                {share && (
-                  <div className="share-panel">
-                    <h3>Private signing link</h3>
-                    <p>
-                      Anyone with this link can sign as the recipient. Share it
-                      only with the intended person. It will not be shown again
-                      after leaving this document.
+                      remove={
+                        selected.status === "draft"
+                          ? (i) => {
+                              if (!busy)
+                                setFields(fields.filter((_, j) => i !== j));
+                            }
+                          : undefined
+                      }
+                      onFieldActivate={
+                        selected.status === "draft"
+                          ? (_, field) => {
+                              if (busy) return;
+                              if (field.signer === "company") {
+                                if (field.type === "signature")
+                                  setShowSignature(true);
+                                else setDateApplied(true);
+                              }
+                            }
+                          : undefined
+                      }
+                      updateField={
+                        selected.status === "draft"
+                          ? (i, patch) => {
+                              if (!busy)
+                                setFields(
+                                  fields.map((f, j) =>
+                                    i === j ? { ...f, ...patch } : f,
+                                  ),
+                                );
+                            }
+                          : undefined
+                      }
+                      duplicateField={
+                        selected.status === "draft"
+                          ? (i) => {
+                              if (busy) return;
+                              if (fields.length >= 50) {
+                                setMessage(
+                                  "A document can contain at most 50 fields.",
+                                );
+                                return;
+                              }
+                              const field = fields[i];
+                              setFields([
+                                ...fields,
+                                {
+                                  ...field,
+                                  x: Math.min(1 - field.width, field.x + 0.025),
+                                  y: Math.min(
+                                    1 - field.height,
+                                    field.y + 0.025,
+                                  ),
+                                },
+                              ]);
+                            }
+                          : undefined
+                      }
+                      signaturePreviews={{ company: signature }}
+                      datePreviews={{
+                        company: dateApplied ? today : undefined,
+                      }}
+                      signerNames={{
+                        company: "Lichen Wang",
+                        recipient:
+                          first.trim() && email
+                            ? `${first} ${last}`.trim()
+                            : undefined,
+                      }}
+                      recipientChoices={recipients.map((r) => ({
+                        id: r.id,
+                        name: `${r.first_name} ${r.last_name}`.trim(),
+                        email: r.email,
+                      }))}
+                      onChooseRecipient={(id) => {
+                        const r = recipients.find((r) => r.id === id);
+                        if (r) {
+                          setRecipientId(r.id);
+                          setEmail(r.email);
+                          setFirst(r.first_name);
+                          setLast(r.last_name);
+                          setRecipientEditor(false);
+                          return;
+                        }
+                        if (id !== "edit") {
+                          setRecipientId("");
+                          setEmail("");
+                          setFirst("");
+                          setLast("");
+                        }
+                        setRecipientEditor(true);
+                      }}
+                      zoomHost={zoomHost}
+                      externalTools
+                      toolsHost={toolsHost}
+                      rangeEditing={pageRangesAvailable}
+                      busy={busy}
+                      onEdit={
+                        selected.status === "draft" && editingAvailable
+                          ? (operation, page, file, range) =>
+                              task(async () => {
+                                await editDocumentPdf(
+                                  selected.id,
+                                  selected.original_path,
+                                  operation,
+                                  page,
+                                  fields,
+                                  file,
+                                  range,
+                                );
+                                await show(selected.id);
+                                await refresh();
+                                setMessage(
+                                  "PDF updated. Review the pages and fields, then sign again before sending.",
+                                );
+                              })
+                          : undefined
+                      }
+                      onReady={setPdfReady}
+                    />
+                  )}
+                  {share && (
+                    <div className="share-panel">
+                      <h3>Private signing link</h3>
+                      <p>
+                        Anyone with this link can sign as the recipient. Share
+                        it only with the intended person. It will not be shown
+                        again after leaving this document.
+                      </p>
+                      <label>
+                        Signing link
+                        <input
+                          readOnly
+                          value={share}
+                          onFocus={(e) => e.target.select()}
+                        />
+                      </label>
+                      <button
+                        onClick={() =>
+                          task(async () => {
+                            await navigator.clipboard.writeText(share);
+                            setMessage("Signing link copied.");
+                          })
+                        }
+                      >
+                        Copy signing link
+                      </button>
+                    </div>
+                  )}
+                  {selected.status === "sent" && (
+                    <p className="notice">
+                      Lichen Wang has signed. Awaiting recipient signature. The
+                      link expires after 72 hours.
                     </p>
-                    <label>
-                      Signing link
-                      <input
-                        readOnly
-                        value={share}
-                        onFocus={(e) => e.target.select()}
-                      />
-                    </label>
+                  )}
+                  {selected.status === "sent" && (
                     <button
+                      disabled={busy}
+                      className="secondary"
                       onClick={() =>
                         task(async () => {
-                          await navigator.clipboard.writeText(share);
-                          setMessage("Signing link copied.");
+                          if (
+                            !confirm(
+                              "Edit this document? All signatures and dates, including Lichen Wang’s, will be cleared. The old signing link will stop working. Everyone must sign and date again.",
+                            )
+                          )
+                            return;
+                          await api("revoke", { documentId: selected.id });
+                          setShare("");
+                          await show(selected.id);
+                          await refresh();
+                          setMessage(
+                            "All signatures and dates cleared. Edit the document, then sign again and send a new invitation.",
+                          );
                         })
                       }
                     >
-                      Copy signing link
+                      Edit document & resend
                     </button>
-                  </div>
-                )}
-                {selected.status === "sent" && (
-                  <p className="notice">
-                    Lichen Wang has signed. Awaiting recipient signature. The
-                    link expires after 72 hours.
-                  </p>
-                )}
-                {selected.status === "sent" && (
-                  <button
-                    disabled={busy}
-                    className="secondary"
-                    onClick={() =>
-                      task(async () => {
-                        if (
-                          !confirm(
-                            "Edit this document? All signatures and dates, including Lichen Wang’s, will be cleared. The old signing link will stop working. Everyone must sign and date again.",
-                          )
-                        )
-                          return;
-                        await api("revoke", { documentId: selected.id });
-                        setShare("");
-                        await show(selected.id);
-                        await refresh();
-                        setMessage(
-                          "All signatures and dates cleared. Edit the document, then sign again and send a new invitation.",
-                        );
-                      })
-                    }
-                  >
-                    Edit document & resend
-                  </button>
-                )}
-                {selected.status === "completed" && (
-                  <button
-                    disabled={busy}
-                    onClick={() =>
-                      task(async () => {
-                        const data = await api("download", {
-                          documentId: selected.id,
-                        });
-                        const r = await fetch(data.url);
-                        if (!r.ok) throw new Error("Download failed");
-                        const objectUrl = URL.createObjectURL(await r.blob()),
-                          a = document.createElement("a");
-                        a.href = objectUrl;
-                        a.download = `signed-${selected.title.replace(/\.pdf$/i, "")}.pdf`;
-                        a.click();
-                        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-                      })
-                    }
-                  >
-                    ↓ Download signed PDF
-                  </button>
-                )}
-                <div className="audit">
-                  <h3>Audit trail</h3>
-                  {audit.map((event) => (
-                    <div className="audit-row" key={event.id}>
-                      <span className="dot" />
-                      <div>
-                        <strong>{event.event.replaceAll("_", " ")}</strong>
-                        <small>
-                          {new Date(event.created_at).toLocaleString()} ·{" "}
-                          {event.actor}
-                        </small>
-                        {Object.keys(event.metadata || {}).length > 0 && (
-                          <details>
-                            <summary>Event details</summary>
-                            <pre>{JSON.stringify(event.metadata, null, 2)}</pre>
-                          </details>
-                        )}
+                  )}
+                  {selected.status === "completed" && (
+                    <button
+                      disabled={busy}
+                      onClick={() =>
+                        task(async () => {
+                          const data = await api("download", {
+                            documentId: selected.id,
+                          });
+                          const r = await fetch(data.url);
+                          if (!r.ok) throw new Error("Download failed");
+                          const objectUrl = URL.createObjectURL(await r.blob()),
+                            a = document.createElement("a");
+                          a.href = objectUrl;
+                          a.download = `signed-${selected.title.replace(/\.pdf$/i, "")}.pdf`;
+                          a.click();
+                          setTimeout(
+                            () => URL.revokeObjectURL(objectUrl),
+                            1000,
+                          );
+                        })
+                      }
+                    >
+                      ↓ Download signed PDF
+                    </button>
+                  )}
+                  <div className="audit">
+                    <h3>Audit trail</h3>
+                    {audit.map((event) => (
+                      <div className="audit-row" key={event.id}>
+                        <span className="dot" />
+                        <div>
+                          <strong>{event.event.replaceAll("_", " ")}</strong>
+                          <small>
+                            {new Date(event.created_at).toLocaleString()} ·{" "}
+                            {event.actor}
+                          </small>
+                          {Object.keys(event.metadata || {}).length > 0 && (
+                            <details>
+                              <summary>Event details</summary>
+                              <pre>
+                                {JSON.stringify(event.metadata, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
+                <div className="pdf-zoom-host" ref={setZoomHost} />
               </div>
             </div>
           )}

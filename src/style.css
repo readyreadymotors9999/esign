@@ -1330,3 +1330,118 @@ body:has(.document-open) footer {
   font-size: clamp(6px, 0.8vw, 10px);
   white-space: nowrap;
 }
+/* Resizable preparation workspace and compact controls. */
+.single-document .editor {
+  grid-template-columns: minmax(
+      280px,
+      min(var(--sidebar-width, 400px), 55%)
+    ) 14px minmax(0, 1fr);
+  gap: 0;
+}
+.preview-pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.preview-pane .document-scroll {
+  height: 100%;
+  overflow: auto;
+}
+.panel-divider {
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  outline-offset: -3px;
+}
+.panel-divider::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 6px;
+  width: 2px;
+  background: #d5dfdc;
+  border-radius: 2px;
+}
+.panel-divider:hover::after,
+.panel-divider:focus-visible::after {
+  background: #187e69;
+  width: 4px;
+}
+.document-sidebar input,
+.document-sidebar select {
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.document-sidebar label {
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+.document-sidebar button,
+.document-sidebar .button {
+  font-size: 12px;
+  padding: 7px 11px;
+  border-radius: 6px;
+}
+.document-sidebar .rename button {
+  width: auto;
+  margin-top: 4px;
+}
+.document-sidebar .recipient-tools h3 {
+  font-size: 14px;
+}
+.document-sidebar .recipient-tools > button {
+  margin-right: 6px;
+}
+.pdf-zoom-host {
+  position: absolute;
+  bottom: 16px;
+  right: 24px;
+  z-index: 30;
+}
+.pdf-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #fffffff5;
+  border: 1px solid #dce3e0;
+  border-radius: 9px;
+  box-shadow: 0 2px 10px #0002;
+  padding: 5px 8px;
+}
+.pdf-zoom-controls button {
+  font-size: 14px;
+  color: #42565c;
+  background: transparent;
+  padding: 4px 6px;
+  min-width: 26px;
+}
+.pdf-zoom-controls input {
+  width: 130px;
+  padding: 0;
+  margin: 0;
+  accent-color: #187e69;
+  cursor: pointer;
+}
+.pdf-page .field.date .date-value {
+  font-size: clamp(9px, 1vw, 13px);
+}
+@media (max-width: 700px) {
+  .panel-divider {
+    display: none;
+  }
+  .preview-pane {
+    flex: 1;
+    min-height: 0;
+  }
+  .pdf-zoom-host {
+    right: 12px;
+    bottom: 10px;
+  }
+  .pdf-zoom-controls input {
+    width: 85px;
+  }
+}
