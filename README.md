@@ -272,3 +272,10 @@ The left toolbar starts at 400px on desktop. Drag the separator to resize it, or
 Use the bottom-right PDF slider or −/+ buttons for **50%–200%** zoom; click the percentage to reset to 100%. Trackpad pinch gestures over the PDF also zoom the preview (Ctrl+wheel on browsers that expose pinch as a wheel event, Safari gesture events supported). Normal two-finger scrolling continues to scroll. Field positions stay relative to the PDF and do not change when zooming. Rendering still adapts to display pixel density within a canvas memory limit.
 
 Signature dialogs default to **Type signature**. **Add signature** applies the displayed signature to the signer's fields without a separate dialog checkbox; the dialog explains this action. The server still records consent, and recipients still have the final document submission confirmation. This frontend update needs no Supabase migration or function redeployment.
+
+
+### Explicit single-field placement
+
+Choose the field signer and Signature/Date, then click **Add field** and click one position on the PDF. Placement ends after that single field. Ordinary blank-page clicks never add fields. **Cancel placement** or Escape cancels, and changing signer/type or opening a field exits placement. Duplicate remains an explicit field-menu action.
+
+Typed signatures use larger text and fit the actual ink into the existing 900×240 signature image with small margins. This increases their size in both the PDF preview and the final PDF without changing the backend image format. Existing completed PDFs remain unchanged; accept the updated typed signature before sending a new invitation. This frontend update requires no Supabase changes.

@@ -214,9 +214,48 @@ test.describe("High density PDF preview", () => {
       await expect(page.getByRole("alert")).toHaveCount(0);
       await page
         .locator(".pdf-page")
+        .first()
+        .click({ position: { x: 40, y: 80 } });
+      await expect(page.locator(".field")).toHaveCount(0);
+      await page
+        .getByRole("button", { name: "Add field", exact: true })
+        .click();
+      await page
+        .getByRole("button", { name: "Cancel placement", exact: true })
+        .click();
+      await page
+        .locator(".pdf-page")
+        .first()
+        .click({ position: { x: 40, y: 80 } });
+      await expect(page.locator(".field")).toHaveCount(0);
+      await page
+        .getByRole("button", { name: "Add field", exact: true })
+        .click();
+      await page.keyboard.press("Escape");
+      await page
+        .locator(".pdf-page")
+        .first()
+        .click({ position: { x: 40, y: 80 } });
+      await expect(page.locator(".field")).toHaveCount(0);
+      await page
+        .getByRole("button", { name: "Add field", exact: true })
+        .click();
+      await page
+        .locator(".pdf-page")
         .nth(0)
         .click({ position: { x: 80, y: 140 } });
+      await expect(
+        page.getByRole("button", { name: "Cancel placement", exact: true }),
+      ).toHaveCount(0);
+      await page
+        .locator(".pdf-page")
+        .first()
+        .click({ position: { x: 45, y: 85 } });
+      await expect(page.locator(".field")).toHaveCount(1);
       await page.getByRole("button", { name: "Date", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Add field", exact: true })
+        .click();
       await page
         .locator(".pdf-page")
         .nth(0)
@@ -236,10 +275,16 @@ test.describe("High density PDF preview", () => {
         .getByRole("button", { name: "Signature", exact: true })
         .click();
       await page
+        .getByRole("button", { name: "Add field", exact: true })
+        .click();
+      await page
         .locator(".pdf-page")
         .nth(1)
         .click({ position: { x: 80, y: 140 } });
       await page.getByRole("button", { name: "Date", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Add field", exact: true })
+        .click();
       await page
         .locator(".pdf-page")
         .nth(1)
@@ -297,6 +342,31 @@ test.describe("High density PDF preview", () => {
           .getByRole("button", { name: "Draw signature", exact: true })
           .click();
         await draw(page);
+      }
+      if (delivery === "share") {
+        const bounds = await signatureDialog
+          .getByLabel("Typed signature preview", { exact: true })
+          .evaluate((el) => {
+            const c = el as HTMLCanvasElement;
+            const d = c
+              .getContext("2d")!
+              .getImageData(0, 0, c.width, c.height).data;
+            let minX = c.width,
+              maxX = 0,
+              minY = c.height,
+              maxY = 0;
+            for (let y = 0; y < c.height; y++)
+              for (let x = 0; x < c.width; x++)
+                if (d[(y * c.width + x) * 4 + 3]) {
+                  minX = Math.min(minX, x);
+                  maxX = Math.max(maxX, x);
+                  minY = Math.min(minY, y);
+                  maxY = Math.max(maxY, y);
+                }
+            return { width: maxX - minX, height: maxY - minY };
+          });
+        expect(bounds.width).toBeGreaterThan(700);
+        expect(bounds.height).toBeGreaterThan(120);
       }
       await expect(signatureDialog.getByRole("checkbox")).toHaveCount(0);
       await expect(
@@ -710,15 +780,12 @@ for (const viewport of [
           (await page.locator(".pdf-page").first().boundingBox())!.width,
       )
       .toBeGreaterThan(baseline * 1.45);
-    await page
-      .locator(".pdf-page")
-      .first()
-      .dispatchEvent("wheel", {
-        ctrlKey: true,
-        deltaY: 20,
-        clientX: 600,
-        clientY: 200,
-      });
+    await page.locator(".pdf-page").first().dispatchEvent("wheel", {
+      ctrlKey: true,
+      deltaY: 20,
+      clientX: 600,
+      clientY: 200,
+    });
     await expect
       .poll(async () => Number(await zoom.inputValue()))
       .toBeLessThan(150);
@@ -762,6 +829,7 @@ for (const viewport of [
         pdf = (await page.locator(".pdf-page").last().boundingBox())!;
       expect(tools.x + tools.width).toBeLessThan(pdf.x);
     }
+    await page.getByRole("button", { name: "Add field", exact: true }).click();
     await page
       .locator(".pdf-page")
       .last()
@@ -782,6 +850,9 @@ for (const viewport of [
         .click();
       await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(0);
+      await page
+        .getByRole("button", { name: "Add field", exact: true })
+        .click();
       await page
         .locator(".pdf-page")
         .last()
@@ -827,6 +898,7 @@ for (const viewport of [
     const pdfWidth = (await page.locator(".pdf-page").first().boundingBox())!
       .width;
     expect(pdfWidth).toBeLessThanOrEqual(817);
+    await page.getByRole("button", { name: "Add field", exact: true }).click();
     await page
       .locator(".pdf-page")
       .first()

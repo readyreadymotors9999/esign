@@ -1332,10 +1332,9 @@ body:has(.document-open) footer {
 }
 /* Resizable preparation workspace and compact controls. */
 .single-document .editor {
-  grid-template-columns: minmax(
-      280px,
-      min(var(--sidebar-width, 400px), 55%)
-    ) 14px minmax(0, 1fr);
+  grid-template-columns:
+    minmax(280px, min(var(--sidebar-width, 400px), 55%))
+    14px minmax(0, 1fr);
   gap: 0;
 }
 .preview-pane {
@@ -1444,4 +1443,18 @@ body:has(.document-open) footer {
   .pdf-zoom-controls input {
     width: 85px;
   }
+}
+.pdf-page.placing-field {
+  cursor: crosshair;
+}
+.placement-prompt {
+  color: #166b51;
+  font-size: 12px;
+  padding: 8px;
+  background: #e8f4ee;
+  border-radius: 6px;
+}
+.placement-prompt button {
+  margin-top: 6px;
+  display: block;
 }

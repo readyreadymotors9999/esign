@@ -119,6 +119,22 @@ export function Pdf({
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
   const [error, setError] = useState("");
   const [signer, setSigner] = useState<"company" | "recipient">("company");
+  const [addingField, setAddingField] = useState(false);
+  const placementArmed = useRef(false);
+  function cancelPlacement() {
+    placementArmed.current = false;
+    setAddingField(false);
+  }
+  useEffect(() => {
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        placementArmed.current = false;
+        setAddingField(false);
+      }
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, []);
   const [type, setType] = useState<"signature" | "date">("signature");
   const [customRange, setCustomRange] = useState("");
   const [rangeError, setRangeError] = useState("");
@@ -128,6 +144,8 @@ export function Pdf({
   }, [pdf]);
   const rendered = useRef(new Set<number>());
   useEffect(() => {
+    placementArmed.current = false;
+    setAddingField(false);
     rendered.current.clear();
     onReady?.(false);
     setPdf(undefined);
@@ -170,6 +188,7 @@ export function Pdf({
           aria-label="Field signer"
           value={signer}
           onChange={(e) => {
+            cancelPlacement();
             if (e.target.value === "manage" || e.target.value === "edit") {
               onChooseRecipient?.(
                 e.target.value === "edit" ? "edit" : undefined,
@@ -202,19 +221,49 @@ export function Pdf({
       <span>Place field</span>
       <button
         className={type === "signature" ? "active" : "secondary"}
-        onClick={() => setType("signature")}
+        onClick={() => {
+          cancelPlacement();
+          setType("signature");
+        }}
       >
         Signature
       </button>
       <button
         className={type === "date" ? "active" : "secondary"}
-        onClick={() => setType("date")}
+        onClick={() => {
+          cancelPlacement();
+          setType("date");
+        }}
       >
         Date
       </button>
+      <button
+        type="button"
+        disabled={busy || !pdf}
+        aria-pressed={addingField}
+        onClick={() => {
+          if (signer === "recipient" && !signerNames.recipient) {
+            onChooseRecipient?.();
+            return;
+          }
+          placementArmed.current = true;
+          setAddingField(true);
+        }}
+      >
+        Add field
+      </button>
+      {addingField && (
+        <div className="placement-prompt" role="status">
+          Click the PDF to place one {type} field.
+          <button type="button" className="secondary" onClick={cancelPlacement}>
+            Cancel placement
+          </button>
+        </div>
+      )}
       <small>
-        Click a field to sign or select it. Use its signer selector or settings
-        menu to reassign, duplicate, or delete it.
+        Choose Signature or Date, then click Add field before placing each
+        field. Click a field to sign or select it. Use its signer selector or
+        settings menu to reassign, duplicate, or delete it.
       </small>
       {onEdit && pdf && (
         <div className="page-tools">
@@ -411,8 +460,10 @@ export function Pdf({
               page={i + 1}
               fields={fields}
               place={
-                place
+                place && addingField && !busy
                   ? (f) => {
+                      if (!placementArmed.current) return;
+                      cancelPlacement();
                       if (signer === "recipient" && !signerNames.recipient) {
                         onChooseRecipient?.();
                         return;
@@ -431,6 +482,7 @@ export function Pdf({
                 setMenuField(menuField === index ? undefined : index)
               }
               onActivate={(index, field) => {
+                cancelPlacement();
                 setActiveField(index);
                 setMenuField(undefined);
                 onFieldActivate?.(index, field);
@@ -592,7 +644,7 @@ function Page({
   return (
     <div
       ref={container}
-      className="pdf-page"
+      className={`pdf-page ${place ? "placing-field" : ""}`}
       style={{
         aspectRatio: `1 / ${ratio}`,
         width: Math.min(pageWidth, availableWidth || pageWidth) * zoom,

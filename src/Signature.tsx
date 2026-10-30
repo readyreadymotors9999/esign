@@ -1,5 +1,47 @@
 import { useEffect, useRef, useState } from "react";
 export type SignatureMethod = "drawn" | "typed";
+// Keep the server's 900×240 PNG format while filling it with the actual ink.
+function fitTypedInk(canvas: HTMLCanvasElement) {
+  const context = canvas.getContext("2d")!;
+  const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+  let left = canvas.width,
+    top = canvas.height,
+    right = -1,
+    bottom = -1;
+  for (let y = 0; y < canvas.height; y++)
+    for (let x = 0; x < canvas.width; x++)
+      if (data[(y * canvas.width + x) * 4 + 3]) {
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+  if (right < left) return;
+  const width = right - left + 1,
+    height = bottom - top + 1;
+  const scale = Math.min(
+    (canvas.width - 36) / width,
+    (canvas.height - 36) / height,
+  );
+  const fitted = document.createElement("canvas");
+  fitted.width = canvas.width;
+  fitted.height = canvas.height;
+  fitted
+    .getContext("2d")!
+    .drawImage(
+      canvas,
+      left,
+      top,
+      width,
+      height,
+      (canvas.width - width * scale) / 2,
+      (canvas.height - height * scale) / 2,
+      width * scale,
+      height * scale,
+    );
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(fitted, 0, 0);
+}
 export function Signature({
   onChange,
   onMethodChange,
@@ -33,15 +75,16 @@ export function Signature({
     }
     ctx.fillStyle = "#142e43";
     const font = '"Brush Script MT", "Segoe Script", cursive';
-    ctx.font = `italic 78px ${font}`;
+    ctx.font = `italic 180px ${font}`;
     const size = Math.min(
-      78,
-      (78 * 840) / Math.max(1, ctx.measureText(text).width),
+      180,
+      (180 * 840) / Math.max(1, ctx.measureText(text).width),
     );
     ctx.font = `italic ${size}px ${font}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(text, canvas.width / 2, canvas.height / 2, 840);
+    fitTypedInk(canvas);
     onChange(canvas.toDataURL("image/png"));
   }, [method, typedName, onChange]);
   function clearCanvas() {
