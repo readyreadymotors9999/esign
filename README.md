@@ -1,4 +1,4 @@
-# Ready Ready Motors eSign
+# Ready Ready eSign
 
 **Live app: [Open Ready Ready Motors eSign](https://readyreadymotors9999.github.io/esign/)**
 
@@ -220,4 +220,4 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 
 `202610300001_draft_pdf_editing.sql` adds service-only, version-checked draft edits and prevents issuing an invitation from an obsolete source PDF. No new secrets are needed. If another tab edits the draft or issues an invitation first, the stale operation fails and the admin must refresh. Storage uploads whose database commit is ambiguous are retained for operator reconciliation; do not delete referenced revisions blindly.
 
-The original company logo is stored in `public/r_logo.jpg` and used in the site header and browser icon. The app serves the original image locally using the Vite base path, including on GitHub Pages.
+The approved eSign app icon is stored in `public/esign-icon.png` and used in the site header and browser icon, with the wordmark **Ready Ready eSign** and attribution **by Ready Ready Motors, Inc.** The original company logo remains available at `public/r_logo.jpg`. Both images are served locally using the Vite base path, including on GitHub Pages.

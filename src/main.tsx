@@ -28,13 +28,14 @@ function App() {
         <a href="#" className="brand">
           <img
             className="brand-logo"
-            src={`${import.meta.env.BASE_URL}r_logo.jpg`}
-            alt="Ready Ready Motors company logo"
+            src={`${import.meta.env.BASE_URL}esign-icon.png`}
+            alt="Ready Ready eSign logo"
             width={54}
             height={54}
           />
-          <span>
-            READY READY<small>MOTORS, INC.</small>
+          <span className="brand-wordmark">
+            Ready Ready <span className="brand-product">eSign</span>
+            <small>by Ready Ready Motors, Inc.</small>
           </span>
         </a>
         <span className="header-note">Secure electronic signatures</span>
