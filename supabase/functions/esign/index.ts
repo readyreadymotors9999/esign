@@ -1,12 +1,17 @@
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
 import { PDFDocument } from "pdf-lib";
+import {
+  GmailError,
+  gmailConfig,
+  gmailAccessToken,
+  sendGmail,
+} from "../_shared/gmail.ts";
 import { generateSignedPdf } from "../_shared/pdf.ts";
 import {
   emailAddress,
   validateFields,
   tokenValue,
   placement,
-  escapeHtml,
   ValidationError,
   signaturePng,
   signatureMethodValue,
@@ -413,8 +418,10 @@ Deno.serve(async (request) => {
         placement(f, p.getCropBox(), p.getRotation().angle);
       }
       // Share links do not require an email provider at all.
-      const resend = delivery === "email" ? env("RESEND_API_KEY") : "",
-        from = delivery === "email" ? env("EMAIL_FROM") : "";
+      const gmailToken =
+        delivery === "email"
+          ? await gmailAccessToken(gmailConfig((name) => Deno.env.get(name)))
+          : "";
       const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map((v) => v.toString(16).padStart(2, "0"))
         .join("");
@@ -478,28 +485,9 @@ Deno.serve(async (request) => {
           expires_at: new Date(Date.now() + 72 * 3600000).toISOString(),
         });
       let sent = false;
+      let messageId = "";
       try {
-        const response = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resend}`,
-            "Content-Type": "application/json",
-            "Idempotency-Key": sid,
-          },
-          signal: AbortSignal.timeout(20000),
-          body: JSON.stringify({
-            from,
-            to: [email],
-            subject: "Ready Ready Motors — document ready to sign",
-            text: `Ready Ready Motors, Inc. invites you to sign ${doc.title}.\n\n${link}\n\nThis private link expires in 72 hours and can be used to sign once. Do not forward it. If you did not expect this message, contact the sender.`,
-            html: `<h2>Ready Ready Motors, Inc.</h2><p>Please review and sign <strong>${escapeHtml(doc.title)}</strong>.</p><p><a href="${escapeHtml(link)}">Review and sign document</a></p><p>Your private link expires in 72 hours and can be used to sign once. Do not forward it.</p>`,
-          }),
-        });
-        if (!response.ok)
-          fail(
-            "Email delivery was not accepted. Verify the sender domain and provider settings.",
-            502,
-          );
+        messageId = await sendGmail(gmailToken, email, doc.title, link, sid);
         sent = true;
       } finally {
         // A timed-out email may still arrive: revoke its token before allowing resend.
@@ -511,20 +499,28 @@ Deno.serve(async (request) => {
           if (error) console.error("Failed invitation needs operator review");
         }
       }
-      await audit(doc.id, "email_accepted_by_provider", email, sid);
+      await audit(doc.id, "email_accepted_by_provider", email, sid, {
+        provider: "gmail",
+        message_id: messageId,
+        sender: "readyreadymotors9999@gmail.com",
+      });
       return json({ sent: true });
     }
     fail("Unknown action.", 404);
   } catch (e) {
     const status =
-      e instanceof HttpError
-        ? e.status
-        : e instanceof ValidationError
-          ? 400
-          : 500;
+      e instanceof GmailError
+        ? 502
+        : e instanceof HttpError
+          ? e.status
+          : e instanceof ValidationError
+            ? 400
+            : 500;
     // Never send raw SDK/provider errors or log request bodies containing tokens.
     const safe =
-      e instanceof HttpError || e instanceof ValidationError
+      e instanceof HttpError ||
+      e instanceof ValidationError ||
+      e instanceof GmailError
         ? e.message
         : "Request could not be completed. Contact the sender or retry.";
     return json({ error: safe }, status);

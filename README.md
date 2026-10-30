@@ -1,6 +1,6 @@
 # Ready Ready Motors eSign
 
-A focused, two-party electronic signature MVP for Ready Ready Motors, Inc. React + TypeScript + Vite frontend on GitHub Pages; PDF.js page rendering; Supabase Auth, private Storage, Postgres and an Edge Function; server-side PDF completion using pdf-lib; email through Resend.
+A focused, two-party electronic signature MVP for Ready Ready Motors, Inc. React + TypeScript + Vite frontend on GitHub Pages; PDF.js page rendering; Supabase Auth, private Storage, Postgres and an Edge Function; server-side PDF completion using pdf-lib; email through the Gmail API from `readyreadymotors9999@gmail.com`.
 
 ## What works
 
@@ -61,34 +61,56 @@ insert into public.admins(user_id) values ('YOUR_AUTH_USER_UUID');
 
 Only enrolled admins can use admin endpoints. Documents are owned by the uploading admin; other admins do not automatically gain access. Recipients use signing capabilities and never receive database or storage permissions. Do not add public Storage policies or authenticated write policies to the application tables.
 
-## 3. Resend and the Edge Function
+## 3. Gmail and the Edge Function
 
-**For share-link-only signing, skip Resend setup.** Only `APP_ORIGIN` and `APP_URL` are required in addition to Supabase’s automatically supplied keys. Email invitations require Resend. Resend is a transactional email delivery service, not a hosting provider.
+Invitations are sent **from `readyreadymotors9999@gmail.com` through Gmail API**. No Resend account, DNS change, custom domain, or Gmail password is required. The backend holds the refresh token and automatically refreshes short-lived access tokens. Both sender and reply address are fixed to the company Gmail account. Only an authenticated, enrolled company admin can initiate sending; public recipients cannot send mail.
 
-Create a Resend account, verify a sending domain, and configure SPF/DKIM (and preferably DMARC). The provider's test sender can only email its allowed test recipients. Real QQ recipients require a verified production sender. QQ addresses are accepted without a domain allowlist; acceptance by Resend is **not** proof of mailbox delivery. Check Resend delivery/bounce logs and the recipient's spam folder. Follow QQ/provider sender reputation requirements if delivery is filtered.
+### One-time Gmail authorization on your own computer
 
-Set these **server-only** Supabase Edge Function secrets in the dashboard or using `supabase secrets set --env-file /secure/path/esign-secrets.env`:
+1. In [Google Cloud Console](https://console.cloud.google.com/), create/select a project and **enable Gmail API**.
+2. Configure **Google Auth Platform / OAuth consent**. Request `openid`, `email`, and `https://www.googleapis.com/auth/gmail.send`. This grants sending plus basic account identification, not mailbox reading. If the app is in Testing, add `readyreadymotors9999@gmail.com` as a test user. Follow Google's publishing/verification requirements for long-term production use. Testing refresh tokens with Gmail scopes may expire after seven days; reauthorize if this happens. Revocation/account-policy changes can also require reconnection.
+3. Create an OAuth client of type **Desktop app**. Download its client JSON to a private location **outside this repository**. This client is for the local authorization helper; it is separate from the Web client used for optional Google Docs import.
+4. With Node.js 24 installed, run this on your own computer from the checked-out repository:
+
+```sh
+node scripts/connect-gmail.mjs \
+  --client /private/path/client_secret_download.json \
+  --output /private/path/gmail-secrets.env
+```
+
+The helper prints a Google authorization URL. Open it, select **readyreadymotors9999@gmail.com**, and approve sending permission. A temporary localhost callback receives the authorization code with state and PKCE checks. The helper verifies the account and writes `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN` to a new file with owner-only permissions. It does not print these values and refuses to overwrite an existing file. Do not commit the file, put it in frontend variables, or send it in chat. For renewed authorization choose a new private output filename.
+
+5. Import that file into **Supabase → Edge Functions → Secrets**, or run:
+
+```sh
+supabase secrets set --env-file /private/path/gmail-secrets.env
+```
+
+Also configure these non-secret server values:
 
 ```dotenv
 APP_ORIGIN=https://readyreadymotors9999.github.io
 APP_URL=https://readyreadymotors9999.github.io/esign
-EMAIL_FROM=Ready Ready Motors <signatures@your-verified-domain.com>
-RESEND_API_KEY=YOUR_RESEND_SECRET
 ```
 
-`APP_ORIGIN` contains only scheme and host, without a path or trailing slash. `APP_URL` includes the GitHub Pages repository path. For local development set `APP_ORIGIN=http://localhost:5173` and `APP_URL=http://localhost:5173` on a separate development project/function; a function accepts one exact browser origin at a time. Do not put secret files inside the repository. Supabase automatically supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to deployed functions; do not copy these into frontend configuration.
+For share-link-only signing, skip Gmail authorization; only `APP_ORIGIN` and `APP_URL` are needed in addition to Supabase's automatically supplied keys. Gmail credentials are checked only for email invitations. The old `RESEND_API_KEY` and `EMAIL_FROM` settings are no longer read and can be removed from Supabase after migration.
+
+`APP_ORIGIN` is scheme and host only, without a path or trailing slash. `APP_URL` includes `/esign`. For local frontend development use `http://localhost:5173` for both on a separate development project/function. Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to deployed functions; do not copy those keys to frontend configuration.
+
+Apply the database migrations in section 2, then deploy:
 
 ```sh
 supabase functions deploy esign --no-verify-jwt
-```
-
-`supabase/config.toml` also sets `verify_jwt = false`. This is intentional for account-free recipients. The function validates admin JWTs with `auth.getUser()` and checks membership on **every** admin action; public `session` and `complete` actions require the 256-bit invitation token. CORS is an additional browser restriction, not an authentication mechanism.
-
-To type-check Edge code independently:
-
-```sh
 npm run check:edge
 ```
+
+`verify_jwt = false` is intentional for account-free recipients. Every admin action validates its Supabase JWT with `auth.getUser()` and checks explicit admin membership. Public `session` and `complete` actions require the high-entropy signing token. CORS is an additional browser restriction, not authentication.
+
+### Sending behavior and limits
+
+After Lichen signs and clicks **Sign & email recipient**, the server refreshes Gmail authorization and verifies the sender **before** creating a new invitation. It signs the prepared PDF, creates the recipient's one-time session, and sends a UTF-8 multipart email through `users.messages.send`. The message contains the private signing link, not a customer PDF attachment. QQ addresses are accepted. Gmail's message ID is saved in the audit trail; acceptance by Gmail is not proof of inbox delivery. Check the sending Gmail's Sent folder, bounces, and recipient spam folder during acceptance testing.
+
+Gmail API calls are subject to both API quotas and the Gmail account's actual sending/recipient limits and abuse controls. No fixed daily allowance is guaranteed by this app. A failed refresh requires reconnecting the account. A quota/permission error is reported without exposing tokens. On failed or ambiguous sends, the invitation is revoked where possible; Gmail has no send idempotency guarantee, so the app never automatically retries the send. If a delayed email arrives after revocation, its signing link is invalid. Refresh before manually retrying.
 
 Deno imports are pinned; npm dependencies are checksummed in `package-lock.json`.
 
@@ -105,7 +127,7 @@ In the GitHub repository:
 
 The workflow installs the lockfile, runs tests and the production build, uploads the Pages artifact, and deploys with minimal permissions. The expected site is `https://readyreadymotors9999.github.io/esign/`. Hash-based signing URLs keep working on refresh. Missing public config produces an explicit setup screen rather than a broken app.
 
-For a custom domain, update `BASE_PATH` in the workflow to `/`, then update the Edge secrets `APP_ORIGIN` and `APP_URL` to match. Rebuild after changing GitHub public variables. Do not store Resend or service-role secrets in Actions frontend variables, `VITE_*` names, or the compiled site.
+For a custom domain, update `BASE_PATH` in the workflow to `/`, then update the Edge secrets `APP_ORIGIN` and `APP_URL` to match. Rebuild after changing GitHub public variables. Do not store Gmail refresh tokens/client secrets or service-role secrets in Actions frontend variables, `VITE_*` names, or the compiled site.
 
 ## 5. Private Google Docs import
 
@@ -128,7 +150,7 @@ Run this before sending customer documents:
 3. Open the emailed link on a phone and verify Lichen’s signature is already present. Review every page, enter a full name, type or draw a signature, check consent, and submit.
 4. Confirm the admin sees `completed`, downloads the PDF, and verifies placement/date/certificate and `document signed` in the audit trail.
 5. Refresh/reopen the signing URL and attempt a second submission. Both must fail. Confirm the private bucket has no public reads.
-6. Repeat using **Create share link (no email)** with Resend secrets absent; copy/open the link and verify both signatures survive finalization. Test private Google Doc import with the authorized account and a custom filename.
+6. Repeat using **Create share link (no email)** with Gmail secrets absent; copy/open the link and verify both signatures survive finalization. Test private Google Doc import with the authorized account and a custom filename.
 7. Test revocation and expiry using a disposable document. To exercise expiry in the SQL Editor, set its **pending** session's `expires_at` to a past timestamp; never alter a real completed session.
 
 Live email, Supabase authentication/storage and deployed signing must be validated against your project; local tests do not establish external service readiness.
@@ -151,7 +173,7 @@ Live email, Supabase authentication/storage and deployed signing must be validat
 
 - `src/`: frontend admin, private Google Docs export, PDF field editor and mobile signing page.
 - `supabase/migrations/`: tables, RLS, private bucket and atomic signing state transitions.
-- `supabase/functions/esign/`: authenticated admin and token-based signing API, Resend email, server PDF generation.
+- `supabase/functions/esign/`: authenticated admin and token-based signing API, Gmail email, server PDF generation.
 - `supabase/functions/_shared/`: tested field/token validation and PDF coordinate transforms.
 - `.github/workflows/pages.yml`: frontend build/test/deploy.
 - `tests/`: input validation, rotated page placement and database permission/replay tests.
@@ -160,7 +182,7 @@ Live email, Supabase authentication/storage and deployed signing must be validat
 
 - **GitHub Pages** hosts the static frontend at `github.io`; no Cloudflare account or server is needed.
 - **Supabase** requires your own account/project for Auth, private Storage, database and Edge Functions. The browser needs only the **public project URL and anon/publishable key**. Service-role keys stay inside Supabase; deployed functions receive them automatically. Do not send a Supabase personal access token or service-role secret in chat. If an operator automates CLI deployment, supply its credentials through a secure secret binding, never a committed file.
-- **Resend** delivers invitation emails from a verified sending domain. It is optional if you use share links. Its API key belongs only in Supabase Edge Function secrets. A verified sending domain needs DNS setup with your current domain/DNS provider; using Cloudflare specifically is optional.
+- **Gmail API** delivers invitation emails directly from the company Gmail account. One-time owner authorization generates server-only credentials, stored in Supabase Edge Function secrets. No domain/DNS management or Gmail password is needed. Gmail authorization is optional for share-link-only use.
 - **Google OAuth** is optional for private Docs import. Only the public web Client ID belongs in frontend variables; no Google client secret is used by this browser flow.
 
 ## This project's Supabase connection
@@ -177,6 +199,6 @@ GitHub **repository Settings → Secrets and variables → Actions → Variables
 
 GitHub **Settings → Pages → Source → GitHub Actions** enables frontend hosting. These repository settings require the appropriate GitHub App/owner permissions; Git push access alone does not grant them.
 
-Supabase **Edge Functions → Secrets** stores `APP_ORIGIN`, `APP_URL`, and (only for email invitations) `RESEND_API_KEY` and `EMAIL_FROM`. Supabase supplies its service-role key to deployed Edge Functions automatically. Do not add service-role/secret keys, personal access tokens, or database passwords to frontend `VITE_*` variables. Creating the Supabase project is the first step: apply both SQL migrations, deploy the Edge Function, and enroll the admin account before live signing can work.
+Supabase **Edge Functions → Secrets** stores `APP_ORIGIN`, `APP_URL`, and (only for email invitations) `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Supabase supplies its service-role key to deployed Edge Functions automatically. Do not add service-role/secret keys, personal access tokens, or database passwords to frontend `VITE_*` variables. Creating the Supabase project is the first step: apply both SQL migrations, deploy the Edge Function, and enroll the admin account before live signing can work.
 
 The build job also targets the `github-pages` Environment. If you already added `VITE_SUPABASE_URL` under **Settings → Environments → github-pages → Environment variables** and the public `VITE_SUPABASE_ANON_KEY` under **Environment secrets**, that layout is supported. The build accepts the public key from Variables or Secrets (Variables take precedence). Treating it as a GitHub secret does not make it private in the published frontend. No service-role/secret key may be used here.

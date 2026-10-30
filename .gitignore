@@ -154,3 +154,7 @@ vite.config.ts.timestamp-*
 # Browser test artifacts
 playwright-report/
 test-results/
+
+# Local Google OAuth credentials and generated mail secrets
+client_secret_*.json
+gmail-secrets.env

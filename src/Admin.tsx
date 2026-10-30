@@ -503,7 +503,9 @@ export default function Admin() {
                       <option value="share">
                         Create share link (no email)
                       </option>
-                      <option value="email">Send email invitation</option>
+                      <option value="email">
+                        Send email invitation via Gmail
+                      </option>
                     </select>
                   </label>
                   <button disabled={busy || !ready}>
