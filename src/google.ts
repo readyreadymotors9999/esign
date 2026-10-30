@@ -36,7 +36,7 @@ export async function prepareGoogleImport(url: string) {
     clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
   if (!clientId)
     throw new Error(
-      "Google Docs import needs a Google OAuth Client ID. You can export the Doc as PDF and upload it now.",
+      "Google Docs import is not connected yet. Complete the Google Docs setup in the README and redeploy the app. Gmail sending authorization is separate; PDF upload is available now.",
     );
   await loadGoogle();
   // Return a click handler so the OAuth popup opens directly inside a user gesture.
