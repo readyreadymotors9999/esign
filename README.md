@@ -204,3 +204,20 @@ GitHub **Settings → Pages → Source → GitHub Actions** enables frontend hos
 Supabase **Edge Functions → Secrets** stores `APP_ORIGIN`, `APP_URL`, and (only for email invitations) `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`. Supabase supplies its service-role key to deployed Edge Functions automatically. Do not add service-role/secret keys, personal access tokens, or database passwords to frontend `VITE_*` variables. Creating the Supabase project is the first step: apply both SQL migrations, deploy the Edge Function, and enroll the admin account before live signing can work.
 
 The build job also targets the `github-pages` Environment. If you already added `VITE_SUPABASE_URL` under **Settings → Environments → github-pages → Environment variables** and the public `VITE_SUPABASE_ANON_KEY` under **Environment secrets**, that layout is supported. The build accepts the public key from Variables or Secrets (Variables take precedence). Treating it as a GitHub secret does not make it private in the published frontend. No service-role/secret key may be used here.
+
+## Draft PDF page editing
+
+The field signer, Signature and Date controls stay in a sticky left sidebar on desktop and a sticky top panel on narrow screens. Draft-only PDF editing supports deleting a selected page, inserting a blank page after it, appending another unencrypted PDF, and replacing the PDF. Limits remain 100 pages and 10 MB. This edits page structure, not existing PDF text or graphics.
+
+Edits save immediately as a new private Storage object. Deleting pages removes their fields and renumbers later fields; blank-page insertion shifts later fields; append preserves layouts; replacement clears all fields. Every PDF change clears the current company signature and consent so the edited version must be reviewed and signed again. Previously sent/completed documents are locked; revoke an outstanding invitation to return to a draft before editing. Prior file revisions remain private for audit/reconciliation; there is no revision-restore UI in this MVP.
+
+Deploy this update's backend before using the new editor:
+
+```sh
+npx supabase db push
+npx supabase functions deploy esign --no-verify-jwt --use-api
+```
+
+`202610300001_draft_pdf_editing.sql` adds service-only, version-checked draft edits and prevents issuing an invitation from an obsolete source PDF. No new secrets are needed. If another tab edits the draft or issues an invitation first, the stale operation fails and the admin must refresh. Storage uploads whose database commit is ambiguous are retained for operator reconciliation; do not delete referenced revisions blindly.
+
+For the original company logo, upload a PNG file to `public/company-logo.png` (GitHub **Add file → Upload files** in `public/`) or attach it as a file in the development chat. The original image is required before replacing the brand mark.

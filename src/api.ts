@@ -22,6 +22,7 @@ export type Document = {
   created_at: string;
   fields: Field[];
   recipient_name?: string;
+  original_path: string;
 };
 export async function api<T = any>(
   action: string,
@@ -42,4 +43,36 @@ export async function api<T = any>(
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || "Request failed");
   return data;
+}
+
+export async function editDocumentPdf(
+  documentId: string,
+  expectedPath: string,
+  operation: string,
+  page: number,
+  fields: Field[],
+  file?: File,
+) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const form = new FormData();
+  form.set("action", "edit_pdf");
+  form.set("documentId", documentId);
+  form.set("expectedPath", expectedPath);
+  form.set("operation", operation);
+  form.set("page", String(page));
+  form.set("fields", JSON.stringify(fields));
+  if (file) form.set("file", file);
+  const response = await fetch(`${url}/functions/v1/esign`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${session?.access_token || key}`,
+    },
+    body: form,
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "PDF edit failed");
+  return result;
 }

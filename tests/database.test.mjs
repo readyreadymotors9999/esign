@@ -36,6 +36,15 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
         "utf8",
       ),
     );
+    await db.exec(
+      await readFile(
+        new URL(
+          "../supabase/migrations/202610300001_draft_pdf_editing.sql",
+          import.meta.url,
+        ),
+        "utf8",
+      ),
+    );
     await db.exec(`insert into public.admins values ('${admin}');
  insert into public.documents(id,owner_id,title,original_path) values ('${doc}','${admin}','Contract.pdf','${admin}/${doc}/original.pdf');`);
     await db.exec(
@@ -113,6 +122,44 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
       db.exec(`select public.claim_signing_session('expired')`),
     );
     await db.exec(`select public.revoke_signing_session('${doc}','${admin}');`);
+    const previousPath = `${admin}/${doc}/original.pdf`;
+    await db.query(`select public.edit_draft_pdf($1,$2,$3,$4,$5,$6)`, [
+      doc,
+      admin,
+      previousPath,
+      "revision.pdf",
+      fields,
+      JSON.stringify({ operation: "blank" }),
+    ]);
+    await assert.rejects(
+      db.query(`select public.edit_draft_pdf($1,$2,$3,$4,$5,$6)`, [
+        doc,
+        admin,
+        previousPath,
+        "stale.pdf",
+        fields,
+        "{}",
+      ]),
+    );
+    await assert.rejects(
+      db.query(
+        `select public.issue_prepared_session($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          doc,
+          admin,
+          "123@qq.com",
+          "stale",
+          fields,
+          "prepared-old.pdf",
+          JSON.stringify({
+            source_path: previousPath,
+            signed_at: "2026-10-29T12:00:00Z",
+          }),
+          "share",
+          "Recipient",
+        ],
+      ),
+    );
     const final = (
       await db.query(
         `select public.issue_prepared_session($1,$2,$3,$4,$5,$6,$7,$8,$9) as sid`,
@@ -124,6 +171,7 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
           fields,
           "prepared.pdf",
           JSON.stringify({
+            source_path: "revision.pdf",
             signed_at: "2026-10-29T12:00:00Z",
             name: "Lichen Wang",
             consent: true,
@@ -159,6 +207,16 @@ test("database policies, atomic signing, revocation and one-time/expiring links"
       "share",
     );
     await db.exec(`select public.claim_signing_session('final');`);
+    await assert.rejects(
+      db.query(`select public.edit_draft_pdf($1,$2,$3,$4,$5,$6)`, [
+        doc,
+        admin,
+        "revision.pdf",
+        "not-draft.pdf",
+        fields,
+        "{}",
+      ]),
+    );
     await assert.rejects(
       db.exec(`select public.claim_signing_session('final')`),
     );

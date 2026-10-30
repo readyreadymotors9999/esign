@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, supabase, type Document, type Field } from "./api";
+import {
+  api,
+  supabase,
+  editDocumentPdf,
+  type Document,
+  type Field,
+} from "./api";
 import { Pdf } from "./Pdf";
 import { Signature, type SignatureMethod } from "./Signature";
 import { prepareGoogleImport } from "./google";
@@ -33,7 +39,8 @@ export default function Admin() {
     [consent, setConsent] = useState(false),
     [delivery, setDelivery] = useState<"email" | "share">("email"),
     [share, setShare] = useState(""),
-    [pdfReady, setPdfReady] = useState(false);
+    [pdfReady, setPdfReady] = useState(false),
+    [editingAvailable, setEditingAvailable] = useState(false);
   async function refresh() {
     const data = await api("list");
     setDocs(data.documents);
@@ -60,6 +67,7 @@ export default function Admin() {
   }
   async function show(id: string) {
     const data = await api("detail", { documentId: id });
+    setEditingAvailable(data.capabilities?.pdfEditing === true);
     setSelected(data.document);
     setFields(data.document.fields);
     setUrl(data.url || "");
@@ -360,6 +368,12 @@ export default function Admin() {
                   </p>
                 </>
               )}
+              {selected.status === "draft" && !editingAvailable && (
+                <p className="notice">
+                  Page editing will be available after the Supabase backend
+                  update. You can continue placing signature and date fields.
+                </p>
+              )}
               {url && (
                 <Pdf
                   key={`${selected.id}-${selected.status}`}
@@ -373,12 +387,38 @@ export default function Admin() {
                   }
                   place={
                     selected.status === "draft"
-                      ? (field) => setFields([...fields, field])
+                      ? (field) => {
+                          if (!busy) setFields([...fields, field]);
+                        }
                       : undefined
                   }
                   remove={
                     selected.status === "draft"
-                      ? (i) => setFields(fields.filter((_, j) => i !== j))
+                      ? (i) => {
+                          if (!busy)
+                            setFields(fields.filter((_, j) => i !== j));
+                        }
+                      : undefined
+                  }
+                  busy={busy}
+                  onEdit={
+                    selected.status === "draft" && editingAvailable
+                      ? (operation, page, file) =>
+                          task(async () => {
+                            await editDocumentPdf(
+                              selected.id,
+                              selected.original_path,
+                              operation,
+                              page,
+                              fields,
+                              file,
+                            );
+                            await show(selected.id);
+                            await refresh();
+                            setMessage(
+                              "PDF updated. Review the pages and fields, then sign again before sending.",
+                            );
+                          })
                       : undefined
                   }
                   onReady={setPdfReady}

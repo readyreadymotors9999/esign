@@ -9,17 +9,29 @@ export function Pdf({
   place,
   remove,
   onReady,
+  onEdit,
+  busy = false,
 }: {
   url: string;
   fields: Field[];
   place?: (field: Field) => void;
   remove?: (index: number) => void;
   onReady?: (ready: boolean) => void;
+  onEdit?: (
+    operation: "delete" | "blank" | "append" | "replace",
+    page: number,
+    file?: File,
+  ) => void;
+  busy?: boolean;
 }) {
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
   const [error, setError] = useState("");
   const [signer, setSigner] = useState<"company" | "recipient">("company");
   const [type, setType] = useState<"signature" | "date">("signature");
+  const [editPage, setEditPage] = useState(1);
+  useEffect(() => {
+    if (pdf) setEditPage((p) => Math.min(p, pdf.numPages));
+  }, [pdf]);
   const rendered = useRef(new Set<number>());
   useEffect(() => {
     rendered.current.clear();
@@ -55,9 +67,9 @@ export function Pdf({
     onReady?.(false);
   }, [onReady]);
   return (
-    <div>
+    <div className={place ? "pdf-editor-layout" : "pdf-viewer"}>
       {place && (
-        <div className="toolbar">
+        <aside className="toolbar pdf-tools" aria-label="PDF editing tools">
           <label className="field-signer">
             Field signer
             <select
@@ -85,24 +97,109 @@ export function Pdf({
             Date
           </button>
           <small>Click a page to place. Click a field to remove.</small>
-        </div>
+          {onEdit && pdf && (
+            <div className="page-tools">
+              <h3>Edit PDF</h3>
+              <label>
+                Selected page
+                <select
+                  value={editPage}
+                  onChange={(e) => setEditPage(Number(e.target.value))}
+                >
+                  {Array.from({ length: pdf.numPages }, (_, i) => (
+                    <option key={i} value={i + 1}>
+                      Page {i + 1}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={busy || pdf.numPages >= 100}
+                className="secondary"
+                onClick={() => onEdit("blank", editPage)}
+              >
+                Add blank page after
+              </button>
+              <button
+                type="button"
+                disabled={busy || pdf.numPages <= 1}
+                className="secondary"
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Delete page ${editPage}? Fields on that page will also be removed.`,
+                    )
+                  )
+                    onEdit("delete", editPage);
+                }}
+              >
+                Delete selected page
+              </button>
+              <label
+                className={`button secondary file-tool ${busy ? "disabled" : ""}`}
+              >
+                Append PDF
+                <input
+                  hidden
+                  disabled={busy}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) onEdit("append", editPage, file);
+                  }}
+                />
+              </label>
+              <label
+                className={`button secondary file-tool ${busy ? "disabled" : ""}`}
+              >
+                Replace PDF
+                <input
+                  hidden
+                  disabled={busy}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (
+                      file &&
+                      confirm(
+                        "Replace the draft PDF? All placed fields and the current signature will be cleared.",
+                      )
+                    )
+                      onEdit("replace", editPage, file);
+                  }}
+                />
+              </label>
+              <small>
+                Edits save immediately. Original revisions stay private. Only
+                drafts can be edited.
+              </small>
+            </div>
+          )}
+        </aside>
       )}
-      {error && <p role="alert">{error}</p>}
-      {!pdf && !error && <p>Loading document…</p>}
-      {pdf &&
-        Array.from({ length: pdf.numPages }, (_, i) => (
-          <Page
-            key={i}
-            pdf={pdf}
-            page={i + 1}
-            fields={fields}
-            place={place ? (f) => place({ ...f, signer }) : undefined}
-            remove={remove}
-            type={type}
-            onRendered={pageReady}
-            onFailure={pageError}
-          />
-        ))}
+      <div className="pdf-pages">
+        {error && <p role="alert">{error}</p>}
+        {!pdf && !error && <p>Loading document…</p>}
+        {pdf &&
+          Array.from({ length: pdf.numPages }, (_, i) => (
+            <Page
+              key={i}
+              pdf={pdf}
+              page={i + 1}
+              fields={fields}
+              place={place ? (f) => place({ ...f, signer }) : undefined}
+              remove={remove}
+              type={type}
+              onRendered={pageReady}
+              onFailure={pageError}
+            />
+          ))}
+      </div>
     </div>
   );
 }

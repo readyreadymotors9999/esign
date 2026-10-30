@@ -418,3 +418,133 @@ test("Google Docs import uses OAuth export and a custom filename", async ({
   expect(exported).toBe(true);
   expect(uploaded).toBe(true);
 });
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+])
+  test(`draft PDF page edits and sticky field tools at ${viewport.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    const { editPdf } =
+      await import("../supabase/functions/_shared/edit-pdf.ts");
+    let current = await fixture(),
+      revision = 0;
+    const doc: any = {
+      id,
+      title: "Editable.pdf",
+      status: "draft",
+      fields: [],
+      original_path: "original.pdf",
+      created_at: new Date().toISOString(),
+    };
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "sb-test-auth-token",
+        JSON.stringify({
+          access_token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.fake",
+          refresh_token: "test",
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          token_type: "bearer",
+          user: {
+            id: "test",
+            email: "readyreadymotors9999@gmail.com",
+            aud: "authenticated",
+          },
+        }),
+      ),
+    );
+    await page.route("**/fixture.pdf*", (r) =>
+      r.fulfill({ contentType: "application/pdf", body: current }),
+    );
+    await page.route("https://test.supabase.co/**", async (r) => {
+      const request = r.request();
+      if (
+        request.headers()["content-type"]?.startsWith("multipart/form-data")
+      ) {
+        const form = await new Request(request.url(), {
+          method: "POST",
+          headers: request.headers(),
+          body: request.postDataBuffer()!,
+        }).formData();
+        expect(form.get("action")).toBe("edit_pdf");
+        expect(form.get("expectedPath")).toBe(doc.original_path);
+        const file = form.get("file") as File | null;
+        const result = await editPdf(
+          new Uint8Array(current),
+          String(form.get("operation")) as any,
+          Number(form.get("page")),
+          JSON.parse(String(form.get("fields"))),
+          file ? new Uint8Array(await file.arrayBuffer()) : undefined,
+        );
+        current = Buffer.from(result.bytes);
+        doc.fields = result.fields;
+        doc.original_path = `revision-${++revision}.pdf`;
+        return r.fulfill({ json: { ok: true, pages: result.pages } });
+      }
+      const b = request.postDataJSON();
+      if (b.action === "list") return r.fulfill({ json: { documents: [doc] } });
+      if (b.action === "recipients")
+        return r.fulfill({ json: { recipients: [] } });
+      if (b.action === "detail")
+        return r.fulfill({
+          json: {
+            capabilities: { pdfEditing: true },
+            document: doc,
+            url: `/fixture.pdf?v=${revision}`,
+            audit: [],
+          },
+        });
+      return r.fulfill({ status: 400, json: { error: "Unexpected action" } });
+    });
+    page.on("dialog", (dialog) => dialog.accept());
+    await page.goto("/");
+    await page.getByRole("button", { name: /PDF Editable.pdf/ }).click();
+    await expect(page.locator(".pdf-page")).toHaveCount(2);
+    await page.locator(".pdf-page").last().scrollIntoViewIfNeeded();
+    await expect(
+      page.getByRole("button", { name: "Signature", exact: true }),
+    ).toBeInViewport();
+    if (viewport.width > 700) {
+      const tools = (await page.locator(".pdf-tools").boundingBox())!,
+        pdf = (await page.locator(".pdf-page").last().boundingBox())!;
+      expect(tools.x + tools.width).toBeLessThan(pdf.x);
+    }
+    await page
+      .locator(".pdf-page")
+      .last()
+      .click({ position: { x: 60, y: 180 } });
+    await expect(page.locator(".field")).toHaveCount(1);
+    await page.getByLabel("Selected page").selectOption("1");
+    await page.getByRole("button", { name: "Delete selected page" }).click();
+    await expect(page.locator(".pdf-page")).toHaveCount(1);
+    await expect(page.getByRole("status")).toContainText("PDF updated");
+    await expect(page.locator(".field")).toHaveCount(1);
+    expect(doc.fields[0].page).toBe(1);
+    await page
+      .getByLabel("Append PDF", { exact: true })
+      .setInputFiles({
+        name: "extra.pdf",
+        mimeType: "application/pdf",
+        buffer: await fixture(),
+      });
+    await expect(page.locator(".pdf-page")).toHaveCount(3);
+    await expect(page.locator(".field")).toHaveCount(1);
+    await page.getByRole("button", { name: "Add blank page after" }).click();
+    await expect(page.locator(".pdf-page")).toHaveCount(4);
+    await page
+      .getByLabel("Replace PDF", { exact: true })
+      .setInputFiles({
+        name: "replacement.pdf",
+        mimeType: "application/pdf",
+        buffer: await fixture(),
+      });
+    await expect(page.locator(".pdf-page")).toHaveCount(2);
+    await expect(page.locator(".field")).toHaveCount(0);
+    expect(revision).toBe(4);
+    await page.screenshot({
+      path: `/tmp/esign-pdf-editor-${viewport.width}.png`,
+      fullPage: true,
+    });
+  });

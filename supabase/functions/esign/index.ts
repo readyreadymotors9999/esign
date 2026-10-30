@@ -6,6 +6,7 @@ import {
   gmailAccessToken,
   sendGmail,
 } from "../_shared/gmail.ts";
+import { editPdf, type PdfEdit } from "../_shared/edit-pdf.ts";
 import { generateSignedPdf } from "../_shared/pdf.ts";
 import {
   emailAddress,
@@ -203,15 +204,37 @@ Deno.serve(async (request) => {
     });
   try {
     if (request.method !== "POST") fail("Method not allowed.", 405);
-    if (Number(request.headers.get("content-length") || 0) > 400000)
+    const multipart = request.headers
+      .get("content-type")
+      ?.startsWith("multipart/form-data");
+    const maxBody = multipart ? 10485760 + 65536 : 400000;
+    if (Number(request.headers.get("content-length") || 0) > maxBody)
       fail("Request too large.", 413);
-    const raw = await request.text();
-    if (raw.length > 400000) fail("Request too large.", 413);
     let body: any;
-    try {
-      body = JSON.parse(raw);
-    } catch {
-      fail("Invalid JSON.");
+    if (multipart) {
+      const form = await request.formData();
+      body = {
+        action: form.get("action"),
+        documentId: form.get("documentId"),
+        operation: form.get("operation"),
+        page: Number(form.get("page")),
+        expectedPath: form.get("expectedPath"),
+        file: form.get("file"),
+      };
+      try {
+        body.fields = JSON.parse(String(form.get("fields") || "[]"));
+      } catch {
+        fail("Invalid field layout.");
+      }
+      if (body.action !== "edit_pdf") fail("Unsupported upload action.");
+    } else {
+      const raw = await request.text();
+      if (raw.length > maxBody) fail("Request too large.", 413);
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        fail("Invalid JSON.");
+      }
     }
     if (!body || typeof body.action !== "string") fail("Invalid request.");
     if (body.action === "session") {
@@ -309,6 +332,61 @@ Deno.serve(async (request) => {
     )
       fail("Invalid document ID.");
     const doc = await documentFor(body.documentId, user.id);
+    if (body.action === "edit_pdf") {
+      if (doc.status !== "draft" || body.expectedPath !== doc.original_path)
+        fail(
+          "PDF changed or is no longer a draft. Refresh before editing.",
+          409,
+        );
+      let addition: Uint8Array | undefined;
+      if (body.file instanceof File) {
+        if (body.file.size > 10485760) fail("Choose a PDF smaller than 10 MB.");
+        addition = new Uint8Array(await body.file.arrayBuffer());
+      }
+      let edited;
+      try {
+        edited = await editPdf(
+          await original(doc.original_path),
+          body.operation as PdfEdit,
+          body.page,
+          body.fields,
+          addition,
+        );
+      } catch (e) {
+        if (e instanceof ValidationError) throw e;
+        fail("Unable to edit this PDF. Use valid, unencrypted PDF files.");
+      }
+      if (edited.bytes.length > 10485760) fail("Edited PDF exceeds 10 MB.");
+      const path = `${user.id}/${doc.id}/revision-${crypto.randomUUID()}.pdf`;
+      const { error: uploadError } = await db.storage
+        .from("documents")
+        .upload(path, edited.bytes, {
+          contentType: "application/pdf",
+          upsert: false,
+        });
+      check(uploadError);
+      const { error } = await db.rpc("edit_draft_pdf", {
+        p_document: doc.id,
+        p_owner: user.id,
+        p_expected_path: doc.original_path,
+        p_new_path: path,
+        p_fields: edited.fields,
+        p_metadata: {
+          operation: body.operation,
+          page: body.page,
+          pages: edited.pages,
+          previous_path: doc.original_path,
+          new_path: path,
+          sha256: await digest(edited.bytes),
+        },
+      });
+      if (error)
+        fail(
+          "Edit could not be confirmed. Refresh to check the current PDF before retrying.",
+          409,
+        );
+      return json({ ok: true, pages: edited.pages });
+    }
     if (body.action === "rename") {
       if (doc.status !== "draft")
         fail("Only draft documents can be renamed.", 409);
@@ -357,6 +435,7 @@ Deno.serve(async (request) => {
         .order("created_at");
       check(error);
       return json({
+        capabilities: { pdfEditing: true },
         document: doc,
         audit: data,
         url:
@@ -458,6 +537,7 @@ Deno.serve(async (request) => {
         p_delivery: delivery,
         p_recipient_name: body.recipientName.trim(),
         p_metadata: {
+          source_path: doc.original_path,
           name: "Lichen Wang",
           signature_method: companyMethod,
           email: "readyreadymotors9999@gmail.com",

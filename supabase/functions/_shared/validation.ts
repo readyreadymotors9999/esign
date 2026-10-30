@@ -17,8 +17,16 @@ export function emailAddress(value: unknown): string {
     throw new ValidationError("Enter a valid recipient email.");
   return value.trim().toLowerCase();
 }
-export function validateFields(value: unknown, pageCount: number): Field[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 50)
+export function validateFields(
+  value: unknown,
+  pageCount: number,
+  requireSignature = true,
+): Field[] {
+  if (
+    !Array.isArray(value) ||
+    value.length < (requireSignature ? 1 : 0) ||
+    value.length > 50
+  )
     throw new ValidationError("Place between 1 and 50 fields.");
   const fields = value.map((f) => {
     if (
@@ -48,7 +56,7 @@ export function validateFields(value: unknown, pageCount: number): Field[] {
       ...(f.signer ? { signer: f.signer } : {}),
     } as Field;
   });
-  if (!fields.some((f) => f.type === "signature"))
+  if (requireSignature && !fields.some((f) => f.type === "signature"))
     throw new ValidationError("Place at least one signature field.");
   return fields;
 }
