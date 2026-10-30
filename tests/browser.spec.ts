@@ -44,315 +44,343 @@ async function draw(page: any) {
   await page.mouse.up();
 }
 // External services are mocked. README includes real-service acceptance steps.
-for (const delivery of ["share", "email"])
-  test(`admin signs first, saves a QQ recipient and creates ${delivery} invitation`, async ({
-    page,
-  }) => {
-    const bytes = await fixture();
-    let uploaded = false,
-      sent = false,
-      saved = false;
-    const doc: any = {
-      id,
-      title: "Custom agreement.pdf",
-      status: "draft",
-      fields: [],
-      created_at: new Date().toISOString(),
-    };
-    await page.addInitScript(
-      (email) =>
-        localStorage.setItem(
-          "sb-test-auth-token",
-          JSON.stringify({
-            access_token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.fake",
-            refresh_token: "test-refresh",
-            expires_at: Math.floor(Date.now() / 1000) + 3600,
-            token_type: "bearer",
-            user: {
-              id: "test",
-              email,
-              aud: "authenticated",
-              role: "authenticated",
+test.describe("High density PDF preview", () => {
+  test.use({ deviceScaleFactor: 2 });
+  for (const delivery of ["share", "email"])
+    test(`admin signs first, saves a QQ recipient and creates ${delivery} invitation`, async ({
+      page,
+    }) => {
+      const bytes = await fixture();
+      let uploaded = false,
+        sent = false,
+        saved = false;
+      const doc: any = {
+        id,
+        title: "Custom agreement.pdf",
+        status: "draft",
+        fields: [],
+        created_at: new Date().toISOString(),
+      };
+      await page.addInitScript(
+        (email) =>
+          localStorage.setItem(
+            "sb-test-auth-token",
+            JSON.stringify({
+              access_token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.fake",
+              refresh_token: "test-refresh",
+              expires_at: Math.floor(Date.now() / 1000) + 3600,
+              token_type: "bearer",
+              user: {
+                id: "test",
+                email,
+                aud: "authenticated",
+                role: "authenticated",
+              },
+            }),
+          ),
+        company,
+      );
+      await page.route("**/fixture.pdf", (r) =>
+        r.fulfill({ contentType: "application/pdf", body: bytes }),
+      );
+      await page.route("https://test.supabase.co/**", async (r) => {
+        const req = r.request();
+        if (req.url().includes("/storage/"))
+          return r.fulfill({ json: { Key: "documents/original.pdf" } });
+        const b = req.postDataJSON();
+        if (b.action === "list")
+          return r.fulfill({ json: { documents: uploaded ? [doc] : [] } });
+        if (b.action === "recipients")
+          return r.fulfill({
+            json: {
+              recipients: saved
+                ? [
+                    {
+                      id: "recipient-1",
+                      email: "123456@qq.com",
+                      first_name: "Test",
+                      last_name: "Recipient",
+                    },
+                  ]
+                : [],
             },
-          }),
-        ),
-      company,
-    );
-    await page.route("**/fixture.pdf", (r) =>
-      r.fulfill({ contentType: "application/pdf", body: bytes }),
-    );
-    await page.route("https://test.supabase.co/**", async (r) => {
-      const req = r.request();
-      if (req.url().includes("/storage/"))
-        return r.fulfill({ json: { Key: "documents/original.pdf" } });
-      const b = req.postDataJSON();
-      if (b.action === "list")
-        return r.fulfill({ json: { documents: uploaded ? [doc] : [] } });
-      if (b.action === "recipients")
+          });
+        if (b.action === "save_recipient") {
+          expect(b.email).toBe("123456@qq.com");
+          saved = true;
+          return r.fulfill({ json: { recipient: { id: "recipient-1" } } });
+        }
+        if (b.action === "create") {
+          expect(b.title).toBe("Custom agreement.pdf");
+          return r.fulfill({ json: { id, path: "original.pdf" } });
+        }
+        if (b.action === "uploaded") {
+          uploaded = true;
+          return r.fulfill({ json: { ok: true } });
+        }
+        if (b.action === "detail")
+          return r.fulfill({
+            json: {
+              document: doc,
+              url: "/fixture.pdf",
+              audit: sent
+                ? [
+                    {
+                      id: "event",
+                      event: "company_signed",
+                      actor: company,
+                      created_at: new Date().toISOString(),
+                      metadata: { name: "Lichen Wang" },
+                    },
+                  ]
+                : [],
+            },
+          });
+        if (b.action === "revoke") {
+          doc.status = "draft";
+          return r.fulfill({ json: { ok: true } });
+        }
+        if (b.action === "send") {
+          expect(b.email).toBe("123456@qq.com");
+          expect(b.recipientName).toBe("Test Recipient");
+          expect(b.recipientFirstName).toBe("Test");
+          expect(b.recipientLastName).toBe("Recipient");
+          if (delivery === "share") expect(b.recipientId).toBeUndefined();
+          saved = true;
+          expect(b.fields).toHaveLength(4);
+          expect(
+            b.fields.filter((f: any) => f.signer === "company"),
+          ).toHaveLength(2);
+          expect(
+            b.fields.filter((f: any) => f.signer === "recipient"),
+          ).toHaveLength(2);
+          expect(b.signature).toMatch(/^data:image\/png;base64,/);
+          expect(b.consent).toBe(true);
+          expect(b.signatureMethod).toBe(
+            delivery === "share" ? "typed" : "drawn",
+          );
+          expect(b.delivery).toBe(delivery);
+          sent = true;
+          doc.status = "sent";
+          doc.fields = b.fields;
+          return r.fulfill({
+            json:
+              delivery === "share"
+                ? { link: `https://example.com/#/sign/${"a".repeat(64)}` }
+                : { sent: true },
+          });
+        }
         return r.fulfill({
-          json: {
-            recipients: saved
-              ? [
-                  {
-                    id: "recipient-1",
-                    email: "123456@qq.com",
-                    first_name: "Test",
-                    last_name: "Recipient",
-                  },
-                ]
-              : [],
-          },
+          status: 400,
+          json: { error: "Unexpected mock action" },
         });
-      if (b.action === "save_recipient") {
-        expect(b.email).toBe("123456@qq.com");
-        saved = true;
-        return r.fulfill({ json: { recipient: { id: "recipient-1" } } });
-      }
-      if (b.action === "create") {
-        expect(b.title).toBe("Custom agreement.pdf");
-        return r.fulfill({ json: { id, path: "original.pdf" } });
-      }
-      if (b.action === "uploaded") {
-        uploaded = true;
-        return r.fulfill({ json: { ok: true } });
-      }
-      if (b.action === "detail")
-        return r.fulfill({
-          json: {
-            document: doc,
-            url: "/fixture.pdf",
-            audit: sent
-              ? [
-                  {
-                    id: "event",
-                    event: "company_signed",
-                    actor: company,
-                    created_at: new Date().toISOString(),
-                    metadata: { name: "Lichen Wang" },
-                  },
-                ]
-              : [],
-          },
-        });
-      if (b.action === "revoke") {
-        doc.status = "draft";
-        return r.fulfill({ json: { ok: true } });
-      }
-      if (b.action === "send") {
-        expect(b.email).toBe("123456@qq.com");
-        expect(b.recipientName).toBe("Test Recipient");
-        expect(b.recipientFirstName).toBe("Test");
-        expect(b.recipientLastName).toBe("Recipient");
-        if (delivery === "share") expect(b.recipientId).toBeUndefined();
-        saved = true;
-        expect(b.fields).toHaveLength(4);
-        expect(
-          b.fields.filter((f: any) => f.signer === "company"),
-        ).toHaveLength(2);
-        expect(
-          b.fields.filter((f: any) => f.signer === "recipient"),
-        ).toHaveLength(2);
-        expect(b.signature).toMatch(/^data:image\/png;base64,/);
-        expect(b.consent).toBe(true);
-        expect(b.signatureMethod).toBe(
-          delivery === "share" ? "typed" : "drawn",
-        );
-        expect(b.delivery).toBe(delivery);
-        sent = true;
-        doc.status = "sent";
-        doc.fields = b.fields;
-        return r.fulfill({
-          json:
-            delivery === "share"
-              ? { link: `https://example.com/#/sign/${"a".repeat(64)}` }
-              : { sent: true },
-        });
-      }
-      return r.fulfill({
-        status: 400,
-        json: { error: "Unexpected mock action" },
       });
-    });
-    await page.goto("/");
-    await expect(
-      page.getByRole("heading", { name: "Welcome back, Lichen", exact: true }),
-    ).toBeVisible();
-    await page
-      .getByRole("button", { name: "＋ Upload PDF", exact: true })
-      .click();
-    await page.locator("input[type=file]").setInputFiles({
-      name: "Original.pdf",
-      mimeType: "application/pdf",
-      buffer: bytes,
-    });
-    await page.getByLabel("eSign filename").fill("Custom agreement.pdf");
-    await page
-      .getByRole("button", { name: "Upload & prepare", exact: true })
-      .click();
-    await expect(page.getByRole("status")).toContainText("PDF uploaded");
-    await expect(page.locator(".pdf-page")).toHaveCount(2);
-    await expect(page.getByRole("alert")).toHaveCount(0);
-    await page
-      .locator(".pdf-page")
-      .nth(0)
-      .click({ position: { x: 80, y: 140 } });
-    await page.getByRole("button", { name: "Date", exact: true }).click();
-    await page
-      .locator(".pdf-page")
-      .nth(0)
-      .click({ position: { x: 80, y: 220 } });
-    await expect(
-      page.getByLabel("Field signer").locator('option[value="recipient"]'),
-    ).toHaveCount(0);
-    await page.getByLabel("Recipient first name").fill("Test");
-    await page.getByLabel("Recipient last name").fill("Recipient");
-    await page.getByLabel("Recipient email").fill("123456@qq.com");
-    await page.getByLabel("Field signer").selectOption("recipient");
-    await page.getByRole("button", { name: "Signature", exact: true }).click();
-    await page
-      .locator(".pdf-page")
-      .nth(1)
-      .click({ position: { x: 80, y: 140 } });
-    await page.getByRole("button", { name: "Date", exact: true }).click();
-    await page
-      .locator(".pdf-page")
-      .nth(1)
-      .click({ position: { x: 80, y: 220 } });
-    const field = page.getByRole("button", {
-      name: "Open company signature field 1 on page 1",
-      exact: true,
-    });
-    await field.scrollIntoViewIfNeeded();
-    const before = (await field.boundingBox())!;
-    const pageBox = (await page.locator(".pdf-page").first().boundingBox())!;
-    expect(before.width / pageBox.width).toBeCloseTo((0.28 * 2) / 3, 2);
-    const dateBox = (await page.locator(".field.date").first().boundingBox())!;
-    expect(dateBox.width / pageBox.width).toBeCloseTo(0.22 / 3, 2);
-    expect(dateBox.height / pageBox.height).toBeCloseTo(0.065 / 4, 2);
-    await page.mouse.move(
-      before.x + before.width / 2,
-      before.y + before.height / 2,
-    );
-    await page.mouse.down();
-    await page.mouse.move(
-      before.x + before.width / 2 + 35,
-      before.y + before.height / 2 + 20,
-      { steps: 8 },
-    );
-    await page.mouse.up();
-    await expect(page.locator(".field")).toHaveCount(4);
-    await expect(page.getByRole("dialog")).toHaveCount(0);
-    expect((await field.boundingBox())!.x).toBeGreaterThan(before.x + 25);
-    await page
-      .getByRole("button", {
+      await page.goto("/");
+      await expect(
+        page.getByRole("heading", {
+          name: "Welcome back, Lichen",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "＋ Upload PDF", exact: true })
+        .click();
+      await page.locator("input[type=file]").setInputFiles({
+        name: "Original.pdf",
+        mimeType: "application/pdf",
+        buffer: bytes,
+      });
+      await page.getByLabel("eSign filename").fill("Custom agreement.pdf");
+      await page
+        .getByRole("button", { name: "Upload & prepare", exact: true })
+        .click();
+      await expect(page.getByRole("status")).toContainText("PDF uploaded");
+      await expect(page.locator(".pdf-page")).toHaveCount(2);
+      await expect
+        .poll(() =>
+          page
+            .locator(".pdf-page canvas")
+            .first()
+            .evaluate((el) => ({
+              actual: (el as HTMLCanvasElement).width,
+              expected: Math.ceil(
+                el.getBoundingClientRect().width * window.devicePixelRatio,
+              ),
+            }))
+            .then(({ actual, expected }) => Math.abs(actual - expected)),
+        )
+        .toBeLessThanOrEqual(2);
+
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await page
+        .locator(".pdf-page")
+        .nth(0)
+        .click({ position: { x: 80, y: 140 } });
+      await page.getByRole("button", { name: "Date", exact: true }).click();
+      await page
+        .locator(".pdf-page")
+        .nth(0)
+        .click({ position: { x: 80, y: 220 } });
+      await expect(
+        page.getByLabel("Field signer").locator('option[value="recipient"]'),
+      ).toHaveCount(0);
+      await page.getByLabel("Recipient first name").fill("Test");
+      await page.getByLabel("Recipient last name").fill("Recipient");
+      await page.getByLabel("Recipient email").fill("123456@qq.com");
+      await page.getByLabel("Field signer").selectOption("recipient");
+      await page
+        .getByRole("button", { name: "Signature", exact: true })
+        .click();
+      await page
+        .locator(".pdf-page")
+        .nth(1)
+        .click({ position: { x: 80, y: 140 } });
+      await page.getByRole("button", { name: "Date", exact: true }).click();
+      await page
+        .locator(".pdf-page")
+        .nth(1)
+        .click({ position: { x: 80, y: 220 } });
+      const field = page.getByRole("button", {
         name: "Open company signature field 1 on page 1",
         exact: true,
-      })
-      .click();
-    const signatureDialog = page.getByRole("dialog");
-    if (delivery === "share") {
+      });
+      await field.scrollIntoViewIfNeeded();
+      const before = (await field.boundingBox())!;
+      const pageBox = (await page.locator(".pdf-page").first().boundingBox())!;
+      expect(before.width / pageBox.width).toBeCloseTo((0.28 * 2) / 3, 2);
+      const dateBox = (await page
+        .locator(".field.date")
+        .first()
+        .boundingBox())!;
+      expect(dateBox.width / pageBox.width).toBeCloseTo(0.22 / 3, 2);
+      expect(dateBox.height / pageBox.height).toBeCloseTo(0.065 / 4, 2);
+      await page.mouse.move(
+        before.x + before.width / 2,
+        before.y + before.height / 2,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        before.x + before.width / 2 + 35,
+        before.y + before.height / 2 + 20,
+        { steps: 8 },
+      );
+      await page.mouse.up();
+      await expect(page.locator(".field")).toHaveCount(4);
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      expect((await field.boundingBox())!.x).toBeGreaterThan(before.x + 25);
+      await page
+        .getByRole("button", {
+          name: "Open company signature field 1 on page 1",
+          exact: true,
+        })
+        .click();
+      const signatureDialog = page.getByRole("dialog");
+      if (delivery === "share") {
+        await signatureDialog
+          .getByRole("button", { name: "Type signature", exact: true })
+          .click();
+        await expect(
+          signatureDialog.getByLabel("Type your signature name"),
+        ).toHaveValue("Lichen Wang");
+      } else await draw(page);
+      await signatureDialog.getByRole("checkbox").check();
       await signatureDialog
-        .getByRole("button", { name: "Type signature", exact: true })
+        .getByRole("button", { name: "Accept signature", exact: true })
+        .click();
+      await expect(page.locator(".field-content img")).toHaveCount(1);
+      await expect(page.locator(".date-value").first()).toHaveText(
+        /\d{2}\/\d{2}\/\d{4}/,
+      );
+      await page
+        .getByRole("button", { name: "Field settings 1", exact: true })
+        .click();
+      await page
+        .getByRole("menuitem", { name: "Duplicate", exact: true })
+        .click();
+      await expect(page.locator(".field")).toHaveCount(5);
+      await expect(page.locator(".field-content img")).toHaveCount(2);
+      await page
+        .getByRole("button", {
+          name: "Open company signature field 5 on page 1",
+          exact: true,
+        })
         .click();
       await expect(
-        signatureDialog.getByLabel("Type your signature name"),
-      ).toHaveValue("Lichen Wang");
-    } else await draw(page);
-    await signatureDialog.getByRole("checkbox").check();
-    await signatureDialog
-      .getByRole("button", { name: "Accept signature", exact: true })
-      .click();
-    await expect(page.locator(".field-content img")).toHaveCount(1);
-    await expect(page.locator(".date-value").first()).toHaveText(
-      /\d{2}\/\d{2}\/\d{4}/,
-    );
-    await page
-      .getByRole("button", { name: "Field settings 1", exact: true })
-      .click();
-    await page
-      .getByRole("menuitem", { name: "Duplicate", exact: true })
-      .click();
-    await expect(page.locator(".field")).toHaveCount(5);
-    await expect(page.locator(".field-content img")).toHaveCount(2);
-    await page
-      .getByRole("button", {
-        name: "Open company signature field 5 on page 1",
-        exact: true,
-      })
-      .click();
-    await expect(
-      page.getByRole("dialog").getByRole("button", {
-        name: delivery === "share" ? "Type signature" : "Draw signature",
-        exact: true,
-      }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await page
-      .getByRole("button", { name: "Close signature dialog", exact: true })
-      .click();
-    await page.getByLabel("Signer for field 5").selectOption("recipient");
-    await expect(page.locator(".field-content img")).toHaveCount(1);
-    await page.getByLabel("Signer for field 5").selectOption("company");
-    await expect(page.locator(".field-content img")).toHaveCount(2);
-    await page
-      .getByRole("button", { name: "Field settings 5", exact: true })
-      .click();
-    await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
-    await expect(page.locator(".field")).toHaveCount(4);
-    await page.getByLabel("Recipient first name").fill("Test");
-    await page.getByLabel("Recipient last name").fill("Recipient");
-    await page.getByLabel("Recipient email").fill("123456@qq.com");
-    if (delivery === "email") {
+        page.getByRole("dialog").getByRole("button", {
+          name: delivery === "share" ? "Type signature" : "Draw signature",
+          exact: true,
+        }),
+      ).toHaveAttribute("aria-pressed", "true");
       await page
-        .getByRole("button", { name: "Save recipient", exact: true })
+        .getByRole("button", { name: "Close signature dialog", exact: true })
         .click();
-      await expect(page.getByRole("status")).toContainText("Recipient saved");
-      await page.getByLabel("Saved recipient").selectOption("recipient-1");
+      await page.getByLabel("Signer for field 5").selectOption("recipient");
+      await expect(page.locator(".field-content img")).toHaveCount(1);
+      await page.getByLabel("Signer for field 5").selectOption("company");
+      await expect(page.locator(".field-content img")).toHaveCount(2);
+      await page
+        .getByRole("button", { name: "Field settings 5", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
+      await expect(page.locator(".field")).toHaveCount(4);
+      await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
+      await page.getByLabel("Recipient email").fill("123456@qq.com");
+      if (delivery === "email") {
+        await page
+          .getByRole("button", { name: "Save recipient", exact: true })
+          .click();
+        await expect(page.getByRole("status")).toContainText("Recipient saved");
+        await page.getByLabel("Saved recipient").selectOption("recipient-1");
+        await page.getByLabel("Recipient last name").fill("Recipient");
+        await page
+          .getByRole("button", { name: "Update recipient", exact: true })
+          .click();
+        await expect(page.getByRole("status")).toContainText("Recipient saved");
+      }
+      await page.getByLabel("Invitation delivery").selectOption(delivery);
       await page
-        .getByRole("button", { name: "Update recipient", exact: true })
+        .getByRole("button", {
+          name:
+            delivery === "share"
+              ? "Sign & create share link →"
+              : "Sign & email recipient →",
+          exact: true,
+        })
         .click();
-      await expect(page.getByRole("status")).toContainText("Recipient saved");
-    }
-    await page.getByLabel("Invitation delivery").selectOption(delivery);
-    await page
-      .getByRole("button", {
-        name:
-          delivery === "share"
-            ? "Sign & create share link →"
-            : "Sign & email recipient →",
-        exact: true,
-      })
-      .click();
-    await expect(
-      page.getByRole("button", { name: "Edit document & resend" }),
-    ).toBeVisible();
-    expect(sent).toBe(true);
-    expect(saved).toBe(true);
-    if (delivery === "share")
       await expect(
-        page.getByLabel("Signing link", { exact: true }),
-      ).toHaveValue(/#\/sign\/a{64}$/);
-    page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "Edit document & resend" }).click();
-    await expect(page.getByRole("status")).toContainText(
-      "All signatures and dates cleared",
-    );
-    await expect(page.locator(".field-content img")).toHaveCount(0);
-    await expect(page.locator(".date-value")).toHaveCount(0);
-    await expect(
-      page.getByRole("button", {
-        name:
-          delivery === "share"
-            ? "Sign & create share link →"
-            : "Sign & email recipient →",
-        exact: true,
-      }),
-    ).toBeDisabled();
-    await page.screenshot({
-      path: `/tmp/esign-admin-${delivery}.png`,
-      fullPage: true,
+        page.getByRole("button", { name: "Edit document & resend" }),
+      ).toBeVisible();
+      expect(sent).toBe(true);
+      expect(saved).toBe(true);
+      if (delivery === "share")
+        await expect(
+          page.getByLabel("Signing link", { exact: true }),
+        ).toHaveValue(/#\/sign\/a{64}$/);
+      page.once("dialog", (dialog) => dialog.accept());
+      await page
+        .getByRole("button", { name: "Edit document & resend" })
+        .click();
+      await expect(page.getByRole("status")).toContainText(
+        "All signatures and dates cleared",
+      );
+      await expect(page.locator(".field-content img")).toHaveCount(0);
+      await expect(page.locator(".date-value")).toHaveCount(0);
+      await expect(
+        page.getByRole("button", {
+          name:
+            delivery === "share"
+              ? "Sign & create share link →"
+              : "Sign & email recipient →",
+          exact: true,
+        }),
+      ).toBeDisabled();
+      await page.screenshot({
+        path: `/tmp/esign-admin-${delivery}.png`,
+        fullPage: true,
+      });
     });
-  });
+});
 for (const method of ["drawn", "typed"])
   test(`mobile recipient uses ${method} signature and cannot reuse the link`, async ({
     page,

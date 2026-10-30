@@ -389,6 +389,29 @@ function Page({
   signerNames: Partial<Record<"company" | "recipient", string>>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const container = useRef<HTMLDivElement>(null);
+  const [pixelWidth, setPixelWidth] = useState(0);
+  useEffect(() => {
+    const element = container.current;
+    if (!element) return;
+    const measure = () =>
+      setPixelWidth(
+        Math.max(
+          1,
+          Math.ceil(
+            element.getBoundingClientRect().width * window.devicePixelRatio,
+          ),
+        ),
+      );
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
+    measure();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
   const drag = useRef<
     | {
         index: number;
@@ -403,19 +426,36 @@ function Page({
   const suppressClick = useRef(false);
   const [ratio, setRatio] = useState(1.294);
   useEffect(() => {
+    if (!pixelWidth) return;
     let cancelled = false;
     let render: pdfjs.RenderTask | undefined;
     pdf
       .getPage(page)
       .then((p) => {
         if (cancelled || !canvas.current) return;
-        const viewport = p.getViewport({ scale: 1.5 });
+        const base = p.getViewport({ scale: 1 });
+        // Render at native display density, with a per-page canvas memory bound.
+        const scale = Math.min(
+          pixelWidth / base.width,
+          Math.sqrt(16_000_000 / (base.width * base.height)),
+          4096 / base.width,
+          4096 / base.height,
+        );
+        const viewport = p.getViewport({ scale });
         setRatio(viewport.height / viewport.width);
-        canvas.current.width = viewport.width;
-        canvas.current.height = viewport.height;
-        render = p.render({ canvas: canvas.current, viewport });
+        // Each render owns its canvas, so a resize cannot race a cancelled render.
+        const surface = document.createElement("canvas");
+        surface.width = Math.ceil(viewport.width);
+        surface.height = Math.ceil(viewport.height);
+        render = p.render({ canvas: surface, viewport });
         return render.promise.then(() => {
-          if (!cancelled) onRendered(page);
+          if (!cancelled && canvas.current) {
+            canvas.current.width = surface.width;
+            canvas.current.height = surface.height;
+            canvas.current.getContext("2d")!.drawImage(surface, 0, 0);
+            onRendered(page);
+          }
+          surface.width = surface.height = 0;
         });
       })
       .catch((e) => {
@@ -426,9 +466,10 @@ function Page({
       cancelled = true;
       render?.cancel();
     };
-  }, [pdf, page, onRendered, onFailure]);
+  }, [pdf, page, pixelWidth, onRendered, onFailure]);
   return (
     <div
+      ref={container}
       className="pdf-page"
       style={{ aspectRatio: `1 / ${ratio}` }}
       onClick={(event) => {
