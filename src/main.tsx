@@ -5,7 +5,6 @@ import { api, configured, supabase } from "./api";
 import Admin from "./Admin";
 import { Pdf } from "./Pdf";
 import { Signature, type SignatureMethod } from "./Signature";
-import companyLogo from "../r_logo.jpg";
 import "./style.css";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -29,7 +28,7 @@ function App() {
         <a href="#" className="brand">
           <img
             className="brand-logo"
-            src={companyLogo}
+            src={`${import.meta.env.BASE_URL}r_logo.jpg`}
             alt="Ready Ready Motors company logo"
             width={54}
             height={54}
