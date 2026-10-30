@@ -212,13 +212,23 @@ test.describe("High density PDF preview", () => {
         .toBeLessThanOrEqual(2);
 
       await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Add field", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Signature", exact: true }),
+      ).toHaveAttribute("aria-pressed", "false");
+      await expect(
+        page.getByRole("button", { name: "Date", exact: true }),
+      ).toHaveAttribute("aria-pressed", "false");
+
       await page
         .locator(".pdf-page")
         .first()
         .click({ position: { x: 40, y: 80 } });
       await expect(page.locator(".field")).toHaveCount(0);
       await page
-        .getByRole("button", { name: "Add field", exact: true })
+        .getByRole("button", { name: "Signature", exact: true })
         .click();
       await page
         .getByRole("button", { name: "Cancel placement", exact: true })
@@ -229,7 +239,7 @@ test.describe("High density PDF preview", () => {
         .click({ position: { x: 40, y: 80 } });
       await expect(page.locator(".field")).toHaveCount(0);
       await page
-        .getByRole("button", { name: "Add field", exact: true })
+        .getByRole("button", { name: "Signature", exact: true })
         .click();
       await page.keyboard.press("Escape");
       await page
@@ -238,7 +248,7 @@ test.describe("High density PDF preview", () => {
         .click({ position: { x: 40, y: 80 } });
       await expect(page.locator(".field")).toHaveCount(0);
       await page
-        .getByRole("button", { name: "Add field", exact: true })
+        .getByRole("button", { name: "Signature", exact: true })
         .click();
       await page
         .locator(".pdf-page")
@@ -252,10 +262,15 @@ test.describe("High density PDF preview", () => {
         .first()
         .click({ position: { x: 45, y: 85 } });
       await expect(page.locator(".field")).toHaveCount(1);
+      await expect(
+        page.getByRole("button", { name: "Signature", exact: true }),
+      ).toHaveAttribute("aria-pressed", "false");
+      await expect(
+        page.getByRole("button", { name: "Date", exact: true }),
+      ).toHaveAttribute("aria-pressed", "false");
+
       await page.getByRole("button", { name: "Date", exact: true }).click();
-      await page
-        .getByRole("button", { name: "Add field", exact: true })
-        .click();
+
       await page
         .locator(".pdf-page")
         .nth(0)
@@ -274,17 +289,13 @@ test.describe("High density PDF preview", () => {
       await page
         .getByRole("button", { name: "Signature", exact: true })
         .click();
-      await page
-        .getByRole("button", { name: "Add field", exact: true })
-        .click();
+
       await page
         .locator(".pdf-page")
         .nth(1)
         .click({ position: { x: 80, y: 140 } });
       await page.getByRole("button", { name: "Date", exact: true }).click();
-      await page
-        .getByRole("button", { name: "Add field", exact: true })
-        .click();
+
       await page
         .locator(".pdf-page")
         .nth(1)
@@ -829,7 +840,7 @@ for (const viewport of [
         pdf = (await page.locator(".pdf-page").last().boundingBox())!;
       expect(tools.x + tools.width).toBeLessThan(pdf.x);
     }
-    await page.getByRole("button", { name: "Add field", exact: true }).click();
+    await page.getByRole("button", { name: "Signature", exact: true }).click();
     await page
       .locator(".pdf-page")
       .last()
@@ -851,7 +862,7 @@ for (const viewport of [
       await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(0);
       await page
-        .getByRole("button", { name: "Add field", exact: true })
+        .getByRole("button", { name: "Signature", exact: true })
         .click();
       await page
         .locator(".pdf-page")
@@ -898,7 +909,7 @@ for (const viewport of [
     const pdfWidth = (await page.locator(".pdf-page").first().boundingBox())!
       .width;
     expect(pdfWidth).toBeLessThanOrEqual(817);
-    await page.getByRole("button", { name: "Add field", exact: true }).click();
+    await page.getByRole("button", { name: "Signature", exact: true }).click();
     await page
       .locator(".pdf-page")
       .first()

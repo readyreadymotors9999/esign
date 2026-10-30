@@ -276,6 +276,17 @@ Signature dialogs default to **Type signature**. **Add signature** applies the d
 
 ### Explicit single-field placement
 
-Choose the field signer and Signature/Date, then click **Add field** and click one position on the PDF. Placement ends after that single field. Ordinary blank-page clicks never add fields. **Cancel placement** or Escape cancels, and changing signer/type or opening a field exits placement. Duplicate remains an explicit field-menu action.
+Choose the signer, then click **Signature** or **Date** to arm one field placement. Both buttons start unselected. Click a position on the PDF to place that field; both buttons return to unselected immediately. Ordinary blank-page clicks never add fields, and there is no separate Add field button. **Cancel placement**, Escape, or clicking the selected type again cancels; changing signer or opening a field also exits placement. Duplicate remains an explicit field-menu action.
 
 Typed signatures use larger text and fit the actual ink into the existing 900×240 signature image with small margins. This increases their size in both the PDF preview and the final PDF without changing the backend image format. Existing completed PDFs remain unchanged; accept the updated typed signature before sending a new invitation. This frontend update requires no Supabase changes.
+
+
+### Centered signature placement
+
+Signature images are centered horizontally and vertically inside their fields in both the browser preview and the generated PDF, including rotated pages. Existing completed PDFs are immutable and are not regenerated. To update final PDF generation from the latest checkout, deploy the Edge Function:
+
+```sh
+npx supabase functions deploy esign --no-verify-jwt --use-api
+```
+
+No database migration is needed for this centering change. The frontend deploys automatically after push to main.

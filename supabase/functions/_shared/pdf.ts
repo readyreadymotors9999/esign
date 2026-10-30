@@ -34,9 +34,12 @@ export async function generateSignedPdf(
         box.width / image.width,
         box.height / image.height,
       );
+      const angle = (box.rotation * Math.PI) / 180;
+      const dx = (box.width - image.width * scale) / 2;
+      const dy = (box.height - image.height * scale) / 2;
       page.drawImage(image, {
-        x: box.x,
-        y: box.y,
+        x: box.x + dx * Math.cos(angle) - dy * Math.sin(angle),
+        y: box.y + dx * Math.sin(angle) + dy * Math.cos(angle),
         width: image.width * scale,
         height: image.height * scale,
         rotate: degrees(box.rotation),

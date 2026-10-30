@@ -124,18 +124,20 @@ export function Pdf({
   function cancelPlacement() {
     placementArmed.current = false;
     setAddingField(false);
+    setType(undefined);
   }
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         placementArmed.current = false;
         setAddingField(false);
+        setType(undefined);
       }
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, []);
-  const [type, setType] = useState<"signature" | "date">("signature");
+  const [type, setType] = useState<"signature" | "date" | undefined>(undefined);
   const [customRange, setCustomRange] = useState("");
   const [rangeError, setRangeError] = useState("");
   const [editPage, setEditPage] = useState(1);
@@ -146,6 +148,7 @@ export function Pdf({
   useEffect(() => {
     placementArmed.current = false;
     setAddingField(false);
+    setType(undefined);
     rendered.current.clear();
     onReady?.(false);
     setPdf(undefined);
@@ -219,39 +222,31 @@ export function Pdf({
         </select>
       </label>
       <span>Place field</span>
-      <button
-        className={type === "signature" ? "active" : "secondary"}
-        onClick={() => {
-          cancelPlacement();
-          setType("signature");
-        }}
-      >
-        Signature
-      </button>
-      <button
-        className={type === "date" ? "active" : "secondary"}
-        onClick={() => {
-          cancelPlacement();
-          setType("date");
-        }}
-      >
-        Date
-      </button>
-      <button
-        type="button"
-        disabled={busy || !pdf}
-        aria-pressed={addingField}
-        onClick={() => {
-          if (signer === "recipient" && !signerNames.recipient) {
-            onChooseRecipient?.();
-            return;
-          }
-          placementArmed.current = true;
-          setAddingField(true);
-        }}
-      >
-        Add field
-      </button>
+      {(["signature", "date"] as const).map((fieldType) => (
+        <button
+          key={fieldType}
+          type="button"
+          disabled={busy || !pdf}
+          aria-pressed={addingField && type === fieldType}
+          className={addingField && type === fieldType ? "active" : "secondary"}
+          onClick={() => {
+            if (addingField && type === fieldType) {
+              cancelPlacement();
+              return;
+            }
+            if (signer === "recipient" && !signerNames.recipient) {
+              cancelPlacement();
+              onChooseRecipient?.();
+              return;
+            }
+            placementArmed.current = true;
+            setType(fieldType);
+            setAddingField(true);
+          }}
+        >
+          {fieldType === "signature" ? "Signature" : "Date"}
+        </button>
+      ))}
       {addingField && (
         <div className="placement-prompt" role="status">
           Click the PDF to place one {type} field.
@@ -261,9 +256,9 @@ export function Pdf({
         </div>
       )}
       <small>
-        Choose Signature or Date, then click Add field before placing each
-        field. Click a field to sign or select it. Use its signer selector or
-        settings menu to reassign, duplicate, or delete it.
+        Click Signature or Date, then click the PDF to place one field. Click a
+        field to sign or select it. Use its signer selector or settings menu to
+        reassign, duplicate, or delete it.
       </small>
       {onEdit && pdf && (
         <div className="page-tools">
@@ -473,7 +468,7 @@ export function Pdf({
                   : undefined
               }
               remove={remove}
-              type={type}
+              type={type || "signature"}
               onRendered={pageReady}
               onFailure={pageError}
               activeField={activeField}

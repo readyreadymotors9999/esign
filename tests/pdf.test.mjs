@@ -56,11 +56,41 @@ test("server-generated PDF preserves rotated pages, adds signature/date and cert
       const viewport = p.getViewport({ scale: 1 }),
         canvas = createCanvas(viewport.width, viewport.height);
       await p.render({ canvas, viewport }).promise;
+      const pixels = canvas
+        .getContext("2d")
+        .getImageData(0, 0, canvas.width, canvas.height).data;
+      let minX = canvas.width,
+        maxX = 0,
+        minY = canvas.height,
+        maxY = 0;
+      for (let y = 0; y < canvas.height; y++)
+        for (let x = 0; x < canvas.width; x++) {
+          const offset = (y * canvas.width + x) * 4;
+          if (
+            pixels[offset] < 60 &&
+            pixels[offset + 1] > pixels[offset] &&
+            pixels[offset + 1] > pixels[offset + 2] &&
+            pixels[offset + 2] < 100
+          ) {
+            minX = Math.min(minX, x);
+            maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y);
+            maxY = Math.max(maxY, y);
+          }
+        }
+      assert.ok(
+        Math.abs((minX + maxX) / 2 - viewport.width * 0.25) < 4,
+        `signature horizontally centered on rotated page ${i}`,
+      );
+      assert.ok(
+        Math.abs((minY + maxY) / 2 - viewport.height * 0.25) < 4,
+        `signature vertically centered on rotated page ${i}`,
+      );
       const pixel = canvas
         .getContext("2d")
         .getImageData(
           Math.floor(viewport.width * 0.15),
-          Math.floor(viewport.height * 0.27),
+          Math.floor(viewport.height * 0.25),
           1,
           1,
         ).data;
@@ -161,8 +191,8 @@ test("recipient completion preserves the company signature and both certificates
       canvas = createCanvas(600, 800);
     await p.render({ canvas, viewport }).promise;
     const ctx = canvas.getContext("2d"),
-      company = ctx.getImageData(90, 136, 1, 1).data,
-      recipient = ctx.getImageData(90, 456, 1, 1).data;
+      company = ctx.getImageData(150, 120, 1, 1).data,
+      recipient = ctx.getImageData(150, 440, 1, 1).data;
     assert.ok(
       company[1] > company[0] && company[0] < 60,
       "company signature is intact",
