@@ -123,22 +123,46 @@ test("logo always returns home and account settings manage saved recipients", as
   await expect(
     page.getByRole("heading", { name: "Welcome back, Lichen" }),
   ).toBeVisible();
+  recipients.push({
+    id: "66666666-6666-4666-8666-666666666666",
+    first_name: "Other",
+    last_name: "Contact",
+    email: "other@qq.com",
+  });
   for (let attempt = 0; attempt < 2; attempt++) {
     await page.getByRole("button", { name: /PDF Agreement.pdf/ }).click();
     await expect(
       page.getByLabel("Document toolbar", { exact: true }),
     ).toBeVisible();
-    await page
-      .getByLabel("Field signer")
-      .selectOption("contact:55555555-5555-4555-8555-555555555555");
+    const selectedId =
+      attempt === 0
+        ? "55555555-5555-4555-8555-555555555555"
+        : "66666666-6666-4666-8666-666666666666";
+    await page.getByLabel("Field signer").selectOption(`contact:${selectedId}`);
     await expect(page.getByLabel("Field signer")).toHaveValue("recipient");
     await expect(
       page
         .getByLabel("Field signer")
-        .locator(
-          'option[value="contact:55555555-5555-4555-8555-555555555555"]',
-        ),
+        .locator(`option[value="contact:${selectedId}"]`),
     ).toHaveCount(0);
+    await expect(
+      page.getByLabel("Field signer").locator('option[value="edit"]'),
+    ).toHaveCount(0);
+    await page
+      .getByRole("button", { name: "Edit recipient", exact: true })
+      .click();
+    await expect(page.getByLabel("Recipient first name")).toHaveValue(
+      attempt === 0 ? "New" : "Other",
+    );
+    await expect(
+      page.getByRole("button", { name: "Done", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Update recipient", exact: true }),
+    ).toHaveCSS("background-color", "rgb(22, 107, 89)");
+    await page
+      .getByRole("button", { name: "Close recipient editor", exact: true })
+      .click();
     await page.getByLabel("Field signer").selectOption("manage");
     await expect(page.getByLabel("Recipient first name")).toBeVisible();
     expect(

@@ -304,3 +304,13 @@ Deploy the latest Edge Function to enable contact deletion; existing recipient s
 ```sh
 npx supabase functions deploy esign --project-ref nyjhgexemcxfncoepudy --no-verify-jwt --use-api
 ```
+
+### Loading feedback and selected-recipient editing
+
+Document tab counts show **—** until the first successful list request, rather than a misleading zero. A spinner and Loading documents message replace the empty-state card during this request. Refresh keeps the existing rows and counts while showing Refreshing documents; an actual empty state appears only after a successful response. Returning home starts with an explicit loading state. Request failures keep any previously loaded list.
+
+Opening a document shows feedback while its metadata loads. PDF download and rendering show Loading PDF plus page placeholders until drawing finishes; field placement is enabled after every page renders. Resizing and zooming keep already rendered content visible while improving its resolution.
+
+The signer dropdown contains recipient choices and Add new recipient, without separate Edit entries. Select any recipient to reveal **Edit recipient** beneath the dropdown. The inline editor has one close control and no Done button. Save/Update uses green with white text when enabled and a muted disabled style until the required information is valid. Field placement retains the dashed cursor preview with a normal mouse cursor.
+
+This is a frontend-only update: no new SQL migration or Edge Function deployment is required.

@@ -7,6 +7,7 @@ import {
   type Field,
 } from "./api";
 import { Pdf } from "./Pdf";
+import { Loading } from "./Loading";
 import { createPortal } from "react-dom";
 import { type SignatureMethod } from "./Signature";
 import { SignatureDialog } from "./SignatureDialog";
@@ -26,6 +27,9 @@ export default function Admin() {
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
     [audit, setAudit] = useState<any[]>([]);
+  const [docsLoaded, setDocsLoaded] = useState(false);
+  const [docsLoading, setDocsLoading] = useState(true);
+  const [openingDocument, setOpeningDocument] = useState(false);
   const [source, setSource] = useState<"pdf" | "google" | null>(null),
     [title, setTitle] = useState(""),
     [file, setFile] = useState<File>(),
@@ -71,8 +75,14 @@ export default function Admin() {
   }, [recipientEditor]);
   const today = useSigningDate();
   async function refresh() {
-    const data = await api("list");
-    setDocs(data.documents);
+    setDocsLoading(true);
+    try {
+      const data = await api("list");
+      setDocs(data.documents);
+      setDocsLoaded(true);
+    } finally {
+      setDocsLoading(false);
+    }
   }
   async function refreshRecipients() {
     const data = await api("recipients");
@@ -95,26 +105,31 @@ export default function Admin() {
     }
   }
   async function show(id: string) {
-    const data = await api("detail", { documentId: id });
-    setEditingAvailable(data.capabilities?.pdfEditing === true);
-    setPageRangesAvailable(data.capabilities?.pdfPageRanges === true);
-    if (selected?.id !== id) {
-      setRecipientId("");
-      setEmail("");
-      setFirst("");
-      setLast("");
+    setOpeningDocument(true);
+    try {
+      const data = await api("detail", { documentId: id });
+      setEditingAvailable(data.capabilities?.pdfEditing === true);
+      setPageRangesAvailable(data.capabilities?.pdfPageRanges === true);
+      if (selected?.id !== id) {
+        setRecipientId("");
+        setEmail("");
+        setFirst("");
+        setLast("");
+      }
+      setRecipientEditor(false);
+      setSelected(data.document);
+      setFields(data.document.fields);
+      setUrl(data.url || "");
+      setAudit(data.audit);
+      setRename(data.document.title);
+      setSignature("");
+      setSignatureMethod("typed");
+      setShowSignature(false);
+      setDateApplied(false);
+      setConsent(false);
+    } finally {
+      setOpeningDocument(false);
     }
-    setRecipientEditor(false);
-    setSelected(data.document);
-    setFields(data.document.fields);
-    setUrl(data.url || "");
-    setAudit(data.audit);
-    setRename(data.document.title);
-    setSignature("");
-    setSignatureMethod("typed");
-    setShowSignature(false);
-    setDateApplied(false);
-    setConsent(false);
   }
   async function upload(blob: Blob) {
     if (!title.trim() || title.length > 200)
@@ -223,6 +238,7 @@ export default function Admin() {
           </div>
         </div>
       )}
+      {openingDocument && <Loading>Opening document…</Loading>}
       {message && (
         <p role="status" className="notice">
           {message}
@@ -329,7 +345,7 @@ export default function Admin() {
       )}
       <div className={`workspace ${selected ? "single-document" : ""}`}>
         {!selected && (
-          <aside className="card document-list">
+          <aside className="card document-list" aria-busy={docsLoading}>
             <div className="split">
               <div
                 role="tablist"
@@ -350,11 +366,11 @@ export default function Admin() {
                   >
                     {label}{" "}
                     <span className="count">
-                      {
-                        docs.filter(
-                          (d) => value === "all" || d.status === value,
-                        ).length
-                      }
+                      {!docsLoaded
+                        ? "—"
+                        : docs.filter(
+                            (d) => value === "all" || d.status === value,
+                          ).length}
                     </span>
                   </button>
                 ))}
@@ -367,14 +383,24 @@ export default function Admin() {
                 Refresh
               </button>
             </div>
-            {!docs.length && (
+            {docsLoading && (
+              <Loading>
+                {docsLoaded ? "Refreshing documents…" : "Loading documents…"}
+              </Loading>
+            )}
+            {!docsLoading && !docsLoaded && (
+              <p>Unable to load documents. Refresh to retry.</p>
+            )}
+            {docsLoaded && !docsLoading && !docs.length && (
               <div className="empty">
                 <div className="empty-icon">▤</div>
                 <h3>A fresh start</h3>
                 <p>Upload a PDF or import a Google Doc.</p>
               </div>
             )}
-            {docs.length > 0 &&
+            {docsLoaded &&
+              !docsLoading &&
+              docs.length > 0 &&
               !docs.some((d) => filter === "all" || d.status === filter) && (
                 <p className="empty">No documents in this tab.</p>
               )}
@@ -491,19 +517,6 @@ export default function Admin() {
                         >
                           ×
                         </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          disabled={
-                            busy ||
-                            !first.trim() ||
-                            !email ||
-                            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-                          }
-                          onClick={() => setRecipientEditor(false)}
-                        >
-                          Done
-                        </button>
                       </div>
                       <label>
                         Saved recipient
@@ -566,8 +579,12 @@ export default function Admin() {
                       </label>
                       <button
                         type="button"
-                        className="secondary"
-                        disabled={busy || !email || !first.trim()}
+                        className="recipient-save"
+                        disabled={
+                          busy ||
+                          !first.trim() ||
+                          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+                        }
                         onClick={() =>
                           task(async () => {
                             const saved = await api("save_recipient", {

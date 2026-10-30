@@ -4,6 +4,7 @@ import { parsePageRange } from "../supabase/functions/_shared/page-range.ts";
 import * as pdfjs from "pdfjs-dist";
 import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { Field } from "./api";
+import { Loading } from "./Loading";
 pdfjs.GlobalWorkerOptions.workerSrc = worker;
 export function Pdf({
   url,
@@ -121,6 +122,7 @@ export function Pdf({
   const [activeField, setActiveField] = useState<number>();
   const [menuField, setMenuField] = useState<number>();
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
+  const [allPagesReady, setAllPagesReady] = useState(false);
   const [error, setError] = useState("");
   const [signer, setSigner] = useState<"company" | "recipient">("company");
   const [addingField, setAddingField] = useState(false);
@@ -154,6 +156,7 @@ export function Pdf({
     setAddingField(false);
     setType(undefined);
     rendered.current.clear();
+    setAllPagesReady(false);
     onReady?.(false);
     setPdf(undefined);
     setActiveField(undefined);
@@ -179,7 +182,10 @@ export function Pdf({
   const pageReady = useCallback(
     (page: number) => {
       rendered.current.add(page);
-      if (rendered.current.size === pdf?.numPages) onReady?.(true);
+      if (rendered.current.size === pdf?.numPages) {
+        setAllPagesReady(true);
+        onReady?.(true);
+      }
     },
     [pdf, onReady],
   );
@@ -196,10 +202,8 @@ export function Pdf({
           value={signer}
           onChange={(e) => {
             cancelPlacement();
-            if (e.target.value === "manage" || e.target.value === "edit") {
-              onChooseRecipient?.(
-                e.target.value === "edit" ? "edit" : undefined,
-              );
+            if (e.target.value === "manage") {
+              onChooseRecipient?.();
               return;
             }
             if (e.target.value.startsWith("contact:")) {
@@ -222,19 +226,28 @@ export function Pdf({
               {r.name} · {r.email}
             </option>
           ))}
-          {signerNames.recipient && (
-            <option value="edit">Edit {signerNames.recipient}…</option>
-          )}
           <option value="manage">Add new recipient…</option>
         </select>
       </label>
+      {signer === "recipient" && signerNames.recipient && (
+        <button
+          type="button"
+          className="secondary edit-selected-recipient"
+          onClick={() => {
+            cancelPlacement();
+            onChooseRecipient?.("edit");
+          }}
+        >
+          Edit recipient
+        </button>
+      )}
       <div className="signer-recipient-editor" ref={onRecipientHost} />
       <span>Place field</span>
       {(["signature", "date"] as const).map((fieldType) => (
         <button
           key={fieldType}
           type="button"
-          disabled={busy || !pdf}
+          disabled={busy || !pdf || !allPagesReady}
           aria-pressed={addingField && type === fieldType}
           className={addingField && type === fieldType ? "active" : "secondary"}
           onClick={() => {
@@ -453,7 +466,7 @@ export function Pdf({
         )}
       <div className="pdf-pages">
         {error && <p role="alert">{error}</p>}
-        {!pdf && !error && <p>Loading document…</p>}
+        {!allPagesReady && !error && <Loading>Loading PDF…</Loading>}
         {pdf &&
           Array.from({ length: pdf.numPages }, (_, i) => (
             <Page
@@ -561,6 +574,8 @@ function Page({
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const container = useRef<HTMLDivElement>(null);
+  const [painted, setPainted] = useState(false);
+  const [renderFailed, setRenderFailed] = useState(false);
   const [pixelWidth, setPixelWidth] = useState(0);
   const [availableWidth, setAvailableWidth] = useState(0);
   useEffect(() => {
@@ -649,14 +664,17 @@ function Page({
             canvas.current.width = surface.width;
             canvas.current.height = surface.height;
             canvas.current.getContext("2d")!.drawImage(surface, 0, 0);
+            setPainted(true);
             onRendered(page);
           }
           surface.width = surface.height = 0;
         });
       })
       .catch((e) => {
-        if (!cancelled && e?.name !== "RenderingCancelledException")
+        if (!cancelled && e?.name !== "RenderingCancelledException") {
+          setRenderFailed(true);
           onFailure();
+        }
       });
     return () => {
       cancelled = true;
@@ -689,7 +707,16 @@ function Page({
         setHover(undefined);
       }}
     >
-      <canvas ref={canvas} />
+      <canvas
+        ref={canvas}
+        style={{ visibility: painted ? "visible" : "hidden" }}
+      />
+      {!painted && !renderFailed && (
+        <div className="pdf-page-loading" aria-hidden="true">
+          <span className="loading-spinner" />
+          Rendering page {page}…
+        </div>
+      )}
       {place && hover && hover.type === type && (
         <div
           aria-hidden="true"
@@ -705,151 +732,155 @@ function Page({
           {type === "signature" ? "Signature" : "Date"}
         </div>
       )}
-      {fields.map((f, i) => {
-        if (f.page !== page) return null;
-        const owner = f.signer || "recipient",
-          preview =
-            f.type === "signature"
-              ? signaturePreviews[owner]
-              : datePreviews[owner];
-        return (
-          <div
-            key={i}
-            className={`field ${f.type} ${owner} ${activeField === i ? "selected-field" : ""} ${preview ? "filled-field" : ""}`}
-            style={{
-              left: `${f.x * 100}%`,
-              top: `${f.y * 100}%`,
-              width: `${f.width * 100}%`,
-              height: `${f.height * 100}%`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-            role="group"
-            aria-label={`${f.type} field on page ${page}`}
-          >
-            <button
-              type="button"
-              className="field-content"
-              aria-label={`Open ${owner} ${f.type} field ${i + 1} on page ${page}`}
-              onPointerDown={(e) => {
-                if (!updateField || e.button !== 0) return;
-                e.stopPropagation();
-                e.currentTarget.setPointerCapture(e.pointerId);
-                suppressClick.current = false;
-                drag.current = {
-                  index: i,
-                  startX: e.clientX,
-                  startY: e.clientY,
-                  x: f.x,
-                  y: f.y,
-                  moved: false,
-                };
+      {painted &&
+        fields.map((f, i) => {
+          if (f.page !== page) return null;
+          const owner = f.signer || "recipient",
+            preview =
+              f.type === "signature"
+                ? signaturePreviews[owner]
+                : datePreviews[owner];
+          return (
+            <div
+              key={i}
+              className={`field ${f.type} ${owner} ${activeField === i ? "selected-field" : ""} ${preview ? "filled-field" : ""}`}
+              style={{
+                left: `${f.x * 100}%`,
+                top: `${f.y * 100}%`,
+                width: `${f.width * 100}%`,
+                height: `${f.height * 100}%`,
               }}
-              onPointerMove={(e) => {
-                const d = drag.current;
-                if (!d || d.index !== i) return;
-                const dx = e.clientX - d.startX,
-                  dy = e.clientY - d.startY;
-                if (!d.moved && Math.hypot(dx, dy) < 5) return;
-                d.moved = true;
-                const rect = e.currentTarget
-                  .closest(".pdf-page")!
-                  .getBoundingClientRect();
-                updateField?.(i, {
-                  x: Math.max(0, Math.min(1 - f.width, d.x + dx / rect.width)),
-                  y: Math.max(
-                    0,
-                    Math.min(1 - f.height, d.y + dy / rect.height),
-                  ),
-                });
-              }}
-              onPointerUp={() => {
-                suppressClick.current = !!drag.current?.moved;
-                drag.current = undefined;
-              }}
-              onPointerCancel={() => {
-                suppressClick.current = true;
-                drag.current = undefined;
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (suppressClick.current) {
-                  suppressClick.current = false;
-                  return;
-                }
-                onActivate(i, f);
-              }}
+              onClick={(e) => e.stopPropagation()}
+              role="group"
+              aria-label={`${f.type} field on page ${page}`}
             >
-              {preview ? (
-                f.type === "signature" ? (
-                  <img
-                    draggable={false}
-                    src={preview}
-                    alt={`${signerNames[owner] || owner} signature preview`}
-                  />
-                ) : (
-                  <span className="date-value">{preview}</span>
-                )
-              ) : (
-                <span className="field-label">
-                  {f.type === "signature" ? "Signature" : "Date"}
-                </span>
-              )}
-            </button>
-            {updateField && activeField === i && (
-              <div
-                className={`field-controls ${f.y < 0.1 ? "below" : ""} ${f.x > 0.3 ? "align-right" : ""}`}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <select
-                  aria-label={`Signer for field ${i + 1}`}
-                  value={owner}
-                  onChange={(e) =>
-                    updateField(i, {
-                      signer: e.target.value as "company" | "recipient",
-                    })
+              <button
+                type="button"
+                className="field-content"
+                aria-label={`Open ${owner} ${f.type} field ${i + 1} on page ${page}`}
+                onPointerDown={(e) => {
+                  if (!updateField || e.button !== 0) return;
+                  e.stopPropagation();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  suppressClick.current = false;
+                  drag.current = {
+                    index: i,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    x: f.x,
+                    y: f.y,
+                    moved: false,
+                  };
+                }}
+                onPointerMove={(e) => {
+                  const d = drag.current;
+                  if (!d || d.index !== i) return;
+                  const dx = e.clientX - d.startX,
+                    dy = e.clientY - d.startY;
+                  if (!d.moved && Math.hypot(dx, dy) < 5) return;
+                  d.moved = true;
+                  const rect = e.currentTarget
+                    .closest(".pdf-page")!
+                    .getBoundingClientRect();
+                  updateField?.(i, {
+                    x: Math.max(
+                      0,
+                      Math.min(1 - f.width, d.x + dx / rect.width),
+                    ),
+                    y: Math.max(
+                      0,
+                      Math.min(1 - f.height, d.y + dy / rect.height),
+                    ),
+                  });
+                }}
+                onPointerUp={() => {
+                  suppressClick.current = !!drag.current?.moved;
+                  drag.current = undefined;
+                }}
+                onPointerCancel={() => {
+                  suppressClick.current = true;
+                  drag.current = undefined;
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (suppressClick.current) {
+                    suppressClick.current = false;
+                    return;
                   }
-                >
-                  <option value="company">Lichen Wang</option>
-                  {signerNames.recipient && (
-                    <option value="recipient">{signerNames.recipient}</option>
-                  )}
-                </select>
-                <button
-                  type="button"
-                  className="field-settings"
-                  aria-label={`Field settings ${i + 1}`}
-                  aria-expanded={menuField === i}
-                  onClick={() => onMenu(i)}
-                >
-                  ⚙
-                </button>
-                {menuField === i && (
-                  <div className="field-menu" role="menu">
-                    <button
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        duplicateField?.(i);
-                        onMenu(i);
-                      }}
-                    >
-                      Duplicate
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="danger-link"
-                      onClick={() => onDelete?.(i)}
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  onActivate(i, f);
+                }}
+              >
+                {preview ? (
+                  f.type === "signature" ? (
+                    <img
+                      draggable={false}
+                      src={preview}
+                      alt={`${signerNames[owner] || owner} signature preview`}
+                    />
+                  ) : (
+                    <span className="date-value">{preview}</span>
+                  )
+                ) : (
+                  <span className="field-label">
+                    {f.type === "signature" ? "Signature" : "Date"}
+                  </span>
                 )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+              </button>
+              {updateField && activeField === i && (
+                <div
+                  className={`field-controls ${f.y < 0.1 ? "below" : ""} ${f.x > 0.3 ? "align-right" : ""}`}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <select
+                    aria-label={`Signer for field ${i + 1}`}
+                    value={owner}
+                    onChange={(e) =>
+                      updateField(i, {
+                        signer: e.target.value as "company" | "recipient",
+                      })
+                    }
+                  >
+                    <option value="company">Lichen Wang</option>
+                    {signerNames.recipient && (
+                      <option value="recipient">{signerNames.recipient}</option>
+                    )}
+                  </select>
+                  <button
+                    type="button"
+                    className="field-settings"
+                    aria-label={`Field settings ${i + 1}`}
+                    aria-expanded={menuField === i}
+                    onClick={() => onMenu(i)}
+                  >
+                    ⚙
+                  </button>
+                  {menuField === i && (
+                    <div className="field-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          duplicateField?.(i);
+                          onMenu(i);
+                        }}
+                      >
+                        Duplicate
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="danger-link"
+                        onClick={() => onDelete?.(i)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
       <span className="page-number">Page {page}</span>
     </div>
   );

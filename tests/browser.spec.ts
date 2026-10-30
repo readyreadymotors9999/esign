@@ -296,7 +296,9 @@ test.describe("High density PDF preview", () => {
       await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
       await page.getByLabel("Recipient email").fill("123456@qq.com");
-      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Close recipient editor", exact: true })
+        .click();
       await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
       await page.getByLabel("Field signer").selectOption("recipient");
       await page
@@ -438,7 +440,9 @@ test.describe("High density PDF preview", () => {
         .click();
       await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(4);
-      await page.getByLabel("Field signer").selectOption("edit");
+      await page
+        .getByRole("button", { name: "Edit recipient", exact: true })
+        .click();
       await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
       await page.getByLabel("Recipient email").fill("123456@qq.com");
@@ -456,7 +460,9 @@ test.describe("High density PDF preview", () => {
         await expect(
           page.getByLabel("Field signer").locator('option[value="recipient"]'),
         ).toHaveCount(1);
-        await page.getByLabel("Field signer").selectOption("edit");
+        await page
+          .getByRole("button", { name: "Edit recipient", exact: true })
+          .click();
         await page.getByLabel("Saved recipient").selectOption("recipient-1");
         await page.getByLabel("Recipient last name").fill("Recipient");
         await page
@@ -949,7 +955,9 @@ for (const viewport of [
     await page.getByLabel("Field signer").selectOption("manage");
     await page.getByLabel("Recipient first name").fill("Other");
     await page.getByLabel("Recipient email").fill("other@qq.com");
-    await page.getByRole("button", { name: "Done", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Close recipient editor", exact: true })
+      .click();
     await page.getByLabel("Signer for field 1").selectOption("recipient");
     const ownerBox = (await page
       .getByLabel("Signer for field 1")

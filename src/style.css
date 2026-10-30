@@ -1445,7 +1445,7 @@ body:has(.document-open) footer {
   }
 }
 .pdf-page.placing-field {
-  cursor: crosshair;
+  cursor: default;
 }
 .placement-prompt {
   color: #166b51;
@@ -1585,5 +1585,58 @@ body:has(.document-open) footer {
   }
   .settings-label-short {
     display: inline;
+  }
+}
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #527069;
+  padding: 24px;
+  font-size: 14px;
+  min-height: 76px;
+}
+.loading-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 21px;
+  height: 21px;
+  border: 2px solid #d4e6df;
+  border-top-color: #187e69;
+  border-radius: 50%;
+  animation: esign-spin 0.75s linear infinite;
+}
+@keyframes esign-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.pdf-page-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: white;
+  color: #6a8078;
+  font-size: 14px;
+}
+.document-sidebar .recipient-save:not(:disabled) {
+  background: #166b59;
+  color: white;
+}
+.document-sidebar .recipient-save:disabled {
+  background: #edf1ef;
+  color: #9aa7a2;
+  opacity: 1;
+}
+.document-sidebar .edit-selected-recipient {
+  align-self: flex-start;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-spinner {
+    animation: none;
   }
 }
