@@ -47,7 +47,16 @@ export default function Admin() {
     [editingAvailable, setEditingAvailable] = useState(false),
     [pageRangesAvailable, setPageRangesAvailable] = useState(false),
     [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const [recipientEditor, setRecipientEditor] = useState(false);
   const [filter, setFilter] = useState("all");
+  useEffect(() => {
+    if (!recipientEditor) return;
+    const panel = document.querySelector<HTMLElement>(".recipient-tools");
+    panel?.scrollIntoView({ block: "nearest" });
+    panel
+      ?.querySelector<HTMLInputElement>("input")
+      ?.focus({ preventScroll: true });
+  }, [recipientEditor]);
   const today = useSigningDate();
   async function refresh() {
     const data = await api("list");
@@ -83,6 +92,7 @@ export default function Admin() {
       setFirst("");
       setLast("");
     }
+    setRecipientEditor(false);
     setSelected(data.document);
     setFields(data.document.fields);
     setUrl(data.url || "");
@@ -446,13 +456,35 @@ export default function Admin() {
                     update. You can continue placing signature and date fields.
                   </p>
                 )}
-                {selected.status === "draft" && (
+                {selected.status === "draft" && recipientEditor && (
                   <section
                     className="recipient-tools"
                     aria-label="Manage recipient"
                   >
-                    {" "}
-                    <h3>Recipient</h3>
+                    <div className="split">
+                      <h3>Recipient</h3>
+                      <button
+                        type="button"
+                        className="secondary"
+                        aria-label="Close recipient editor"
+                        onClick={() => setRecipientEditor(false)}
+                      >
+                        ×
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        disabled={
+                          busy ||
+                          !first.trim() ||
+                          !email ||
+                          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+                        }
+                        onClick={() => setRecipientEditor(false)}
+                      >
+                        Done
+                      </button>
+                    </div>
                     <label>
                       Saved recipient
                       <select
@@ -704,14 +736,16 @@ export default function Admin() {
                         setEmail(r.email);
                         setFirst(r.first_name);
                         setLast(r.last_name);
+                        setRecipientEditor(false);
                         return;
                       }
-                      document
-                        .querySelector<HTMLElement>(".recipient-tools select")
-                        ?.focus();
-                      document
-                        .querySelector(".recipient-tools")
-                        ?.scrollIntoView({ block: "nearest" });
+                      if (id !== "edit") {
+                        setRecipientId("");
+                        setEmail("");
+                        setFirst("");
+                        setLast("");
+                      }
+                      setRecipientEditor(true);
                     }}
                     externalTools
                     toolsHost={toolsHost}

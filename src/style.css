@@ -856,7 +856,7 @@ body:has(.document-open) footer {
   background: transparent;
   box-shadow: none;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: 360px minmax(0, 1fr);
   gap: 20px;
   overflow: hidden;
 }

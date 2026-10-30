@@ -105,8 +105,10 @@ export function Pdf({
           aria-label="Field signer"
           value={signer}
           onChange={(e) => {
-            if (e.target.value === "manage") {
-              onChooseRecipient?.();
+            if (e.target.value === "manage" || e.target.value === "edit") {
+              onChooseRecipient?.(
+                e.target.value === "edit" ? "edit" : undefined,
+              );
               return;
             }
             if (e.target.value.startsWith("contact:")) {
@@ -126,7 +128,10 @@ export function Pdf({
               {r.name} · {r.email}
             </option>
           ))}
-          <option value="manage">Choose / add recipient…</option>
+          {signerNames.recipient && (
+            <option value="edit">Edit {signerNames.recipient}…</option>
+          )}
+          <option value="manage">Add new recipient…</option>
         </select>
       </label>
       <span>Place field</span>
@@ -425,6 +430,7 @@ function Page({
   >(undefined);
   const suppressClick = useRef(false);
   const [ratio, setRatio] = useState(1.294);
+  const [pageWidth, setPageWidth] = useState(816);
   useEffect(() => {
     if (!pixelWidth) return;
     let cancelled = false;
@@ -434,6 +440,7 @@ function Page({
       .then((p) => {
         if (cancelled || !canvas.current) return;
         const base = p.getViewport({ scale: 1 });
+        setPageWidth((base.width * 96) / 72);
         // Render at native display density, with a per-page canvas memory bound.
         const scale = Math.min(
           pixelWidth / base.width,
@@ -471,7 +478,11 @@ function Page({
     <div
       ref={container}
       className="pdf-page"
-      style={{ aspectRatio: `1 / ${ratio}` }}
+      style={{
+        aspectRatio: `1 / ${ratio}`,
+        width: pageWidth,
+        maxWidth: "100%",
+      }}
       onClick={(event) => {
         if (!place) return;
         const rect = event.currentTarget.getBoundingClientRect();

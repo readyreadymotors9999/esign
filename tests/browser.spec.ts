@@ -224,9 +224,13 @@ test.describe("High density PDF preview", () => {
       await expect(
         page.getByLabel("Field signer").locator('option[value="recipient"]'),
       ).toHaveCount(0);
+      await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
+      await page.getByLabel("Field signer").selectOption("manage");
       await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
       await page.getByLabel("Recipient email").fill("123456@qq.com");
+      await page.getByRole("button", { name: "Done", exact: true }).click();
+      await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
       await page.getByLabel("Field signer").selectOption("recipient");
       await page
         .getByRole("button", { name: "Signature", exact: true })
@@ -323,6 +327,7 @@ test.describe("High density PDF preview", () => {
         .click();
       await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(4);
+      await page.getByLabel("Field signer").selectOption("edit");
       await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
       await page.getByLabel("Recipient email").fill("123456@qq.com");
@@ -746,6 +751,7 @@ for (const viewport of [
     // A field at the right edge keeps its signer/settings controls inside the viewport.
     const pdfWidth = (await page.locator(".pdf-page").first().boundingBox())!
       .width;
+    expect(pdfWidth).toBeLessThanOrEqual(817);
     await page
       .locator(".pdf-page")
       .first()
@@ -759,8 +765,10 @@ for (const viewport of [
     await page
       .getByRole("button", { name: "Close signature dialog", exact: true })
       .click();
+    await page.getByLabel("Field signer").selectOption("manage");
     await page.getByLabel("Recipient first name").fill("Other");
     await page.getByLabel("Recipient email").fill("other@qq.com");
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await page.getByLabel("Signer for field 1").selectOption("recipient");
     const ownerBox = (await page
       .getByLabel("Signer for field 1")
