@@ -87,9 +87,11 @@ test.describe("High density PDF preview", () => {
         const req = r.request();
         if (req.url().includes("/storage/"))
           return r.fulfill({ json: { Key: "documents/original.pdf" } });
-        const b = req.postDataJSON();
+        const b = req.url().includes("/rest/v1/documents")
+          ? { action: "list" }
+          : req.postDataJSON();
         if (b.action === "list")
-          return r.fulfill({ json: { documents: uploaded ? [doc] : [] } });
+          return r.fulfill({ json: uploaded ? [doc] : [] });
         if (b.action === "recipients")
           return r.fulfill({
             json: {
@@ -661,7 +663,9 @@ test("Google Docs import uses OAuth export and a custom filename", async ({
       uploaded = true;
       return r.fulfill({ json: { Key: "original.pdf" } });
     }
-    const b = req.postDataJSON();
+    const b = req.url().includes("/rest/v1/documents")
+      ? { action: "list" }
+      : req.postDataJSON();
     expect(JSON.stringify(b)).not.toContain("temporary-google-access");
     const doc = {
       id,
@@ -670,8 +674,7 @@ test("Google Docs import uses OAuth export and a custom filename", async ({
       fields: [],
       created_at: new Date().toISOString(),
     };
-    if (b.action === "list")
-      return r.fulfill({ json: { documents: uploaded ? [doc] : [] } });
+    if (b.action === "list") return r.fulfill({ json: uploaded ? [doc] : [] });
     if (b.action === "recipients")
       return r.fulfill({ json: { recipients: [] } });
     if (b.action === "create") {
@@ -769,8 +772,10 @@ for (const viewport of [
         doc.original_path = `revision-${++revision}.pdf`;
         return r.fulfill({ json: { ok: true, pages: result.pages } });
       }
-      const b = request.postDataJSON();
-      if (b.action === "list") return r.fulfill({ json: { documents: [doc] } });
+      const b = request.url().includes("/rest/v1/documents")
+        ? { action: "list" }
+        : request.postDataJSON();
+      if (b.action === "list") return r.fulfill({ json: [doc] });
       if (b.action === "recipients")
         return r.fulfill({ json: { recipients: [] } });
       if (b.action === "detail")

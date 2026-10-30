@@ -44,9 +44,10 @@ test("logo always returns home and account settings manage saved recipients", as
     r.fulfill({ contentType: "application/pdf", body: bytes }),
   );
   await page.route("https://test.supabase.co/**", (r) => {
-    const body = r.request().postDataJSON();
-    if (body.action === "list")
-      return r.fulfill({ json: { documents: [doc] } });
+    const body = r.request().url().includes("/rest/v1/documents")
+      ? { action: "list" }
+      : r.request().postDataJSON();
+    if (body.action === "list") return r.fulfill({ json: [doc] });
     if (body.action === "recipients")
       return r.fulfill({ json: { recipients } });
     if (body.action === "detail")

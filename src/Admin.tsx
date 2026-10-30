@@ -4,9 +4,10 @@ import {
   supabase,
   editDocumentPdf,
   type Document,
+  type DocumentSummary,
   type Field,
 } from "./api";
-import { Pdf } from "./Pdf";
+import { PdfPreview as Pdf } from "./PdfPreview";
 import { Loading } from "./Loading";
 import { createPortal } from "react-dom";
 import { type SignatureMethod } from "./Signature";
@@ -25,10 +26,10 @@ export default function Admin({
   onDocumentsChange,
 }: {
   homeRequest: number;
-  cachedDocuments?: Document[];
-  onDocumentsChange: (documents: Document[]) => void;
+  cachedDocuments?: DocumentSummary[];
+  onDocumentsChange: (documents: DocumentSummary[]) => void;
 }) {
-  const [docs, setDocs] = useState<Document[]>(cachedDocuments || []),
+  const [docs, setDocs] = useState<DocumentSummary[]>(cachedDocuments || []),
     [selected, setSelected] = useState<Document>(),
     [url, setUrl] = useState(""),
     [fields, setFields] = useState<Field[]>([]),

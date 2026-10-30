@@ -1,10 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { Session } from "@supabase/supabase-js";
-import { api, configured, supabase, type Document } from "./api";
+import { api, configured, supabase, type DocumentSummary } from "./api";
 import Admin from "./Admin";
+import {
+  readDocumentCache,
+  writeDocumentCache,
+  clearDocumentCache,
+} from "./documentCache";
 import AccountSettings from "./AccountSettings";
-import { Pdf } from "./Pdf";
+import { PdfPreview as Pdf } from "./PdfPreview";
 import { type SignatureMethod } from "./Signature";
 import { SignatureDialog } from "./SignatureDialog";
 import { useSigningDate } from "./useSigningDate";
@@ -15,16 +20,26 @@ function App() {
   const [homeVersion, setHomeVersion] = useState(0);
   const [documentCache, setDocumentCache] = useState<{
     owner: string;
-    documents: Document[];
+    documents: DocumentSummary[];
   } | null>(null);
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_, value) => {
+    const applySession = (value: Session | null) => {
       setSession(value);
-      setDocumentCache((cached) =>
-        cached?.owner === value?.user.id ? cached : null,
-      );
-    });
+      if (!value) {
+        clearDocumentCache();
+        setDocumentCache(null);
+        return;
+      }
+      setDocumentCache((cached) => {
+        if (cached?.owner === value.user.id) return cached;
+        const documents = readDocumentCache(value.user.id);
+        return documents ? { owner: value.user.id, documents } : null;
+      });
+    };
+    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_, value) =>
+      applySession(value),
+    );
     const fn = () => setHash(location.hash);
     window.addEventListener("hashchange", fn);
     return () => {
@@ -106,9 +121,10 @@ function App() {
                   ? documentCache.documents
                   : undefined
               }
-              onDocumentsChange={(documents) =>
-                setDocumentCache({ owner: session.user.id, documents })
-              }
+              onDocumentsChange={(documents) => {
+                writeDocumentCache(session.user.id, documents);
+                setDocumentCache({ owner: session.user.id, documents });
+              }}
             />
           )
         ) : (

@@ -24,6 +24,10 @@ export type Document = {
   recipient_name?: string;
   original_path: string;
 };
+export type DocumentSummary = Pick<
+  Document,
+  "id" | "title" | "status" | "created_at"
+>;
 export async function api<T = any>(
   action: string,
   body: object = {},
@@ -31,6 +35,18 @@ export async function api<T = any>(
   const {
     data: { session },
   } = await supabase.auth.getSession();
+  // Read only the dashboard metadata through existing owner/admin RLS policies.
+  // Writes and private PDF access continue through the authenticated Edge Function.
+  if (action === "list") {
+    if (!session) throw new Error("Sign in to continue.");
+    const { data, error } = await supabase
+      .from("documents")
+      .select("id,title,status,created_at")
+      .eq("owner_id", session.user.id)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return { documents: data } as T;
+  }
   const response = await fetch(`${url}/functions/v1/esign`, {
     method: "POST",
     headers: {

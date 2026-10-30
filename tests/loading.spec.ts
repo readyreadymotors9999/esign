@@ -46,12 +46,21 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     await route.fulfill({ contentType: "application/pdf", body: bytes });
   });
   await page.route("https://test.supabase.co/**", async (route) => {
-    const b = route.request().postDataJSON();
+    const b = route.request().url().includes("/rest/v1/documents")
+      ? { action: "list" }
+      : route.request().postDataJSON();
     if (b.action === "recipients")
       return route.fulfill({ json: { recipients: [] } });
     if (b.action === "list") {
+      expect(route.request().method()).toBe("GET");
+      const requestUrl = new URL(route.request().url());
+      expect(requestUrl.pathname).toBe("/rest/v1/documents");
+      expect(requestUrl.searchParams.get("select")).toBe(
+        "id,title,status,created_at",
+      );
+      const snapshot = structuredClone([doc]);
       await listGate;
-      return route.fulfill({ json: { documents: [doc] } });
+      return route.fulfill({ json: snapshot });
     }
     if (b.action === "detail") {
       await detail;
@@ -187,4 +196,20 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     page.getByText("Loading documents…", { exact: true }),
   ).toHaveCount(0);
   settingsRelease();
+  let reloadRelease!: () => void;
+  listGate = new Promise<void>((resolve) => (reloadRelease = resolve));
+  doc.title = "Server changed during reload.pdf";
+  await page.reload();
+  await expect(all.locator(".count")).toHaveText("1");
+  await expect(page.locator(".doc-row")).toContainText("Updated agreement.pdf");
+  await expect(
+    page.getByText("Loading documents…", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Refreshing documents…", { exact: true }),
+  ).toHaveCount(0);
+  reloadRelease();
+  await expect(page.locator(".doc-row")).toContainText(
+    "Server changed during reload.pdf",
+  );
 });

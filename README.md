@@ -318,6 +318,15 @@ This is a frontend-only update: no new SQL migration or Edge Function deployment
 
 ### Immediate returns and consistent focus styling
 
-Returning from the document editor via either Back to documents or the logo preserves the mounted workspace and its loaded document list/counts. Returning from Account settings uses an account-scoped in-memory snapshot before revalidating. Background refreshes update the list without a loading reset; manual Refresh still shows progress while preserving rows. Requests superseded by newer requests or navigation cannot reopen an old document or replace newer data. The snapshot is not written to browser storage and is cleared when authentication changes.
+Returning from the document editor via either Back to documents or the logo preserves the mounted workspace and its loaded document list/counts. Returning from Account settings uses an account-scoped in-memory snapshot before revalidating. Background refreshes update the list without a loading reset; manual Refresh still shows progress while preserving rows. Requests superseded by newer requests or navigation cannot reopen an old document or replace newer data. A minimal list summary is also stored in the current tab’s sessionStorage for up to 15 minutes, so browser reloads can restore it immediately. It is cleared when authentication changes.
 
 Dropdown arrows are inset by 12px, with room reserved to their right. Controls use soft green focus styling instead of native blue focus rings, while keyboard focus remains visible. Text selection uses the same green palette. This update needs no Supabase deployment or SQL changes.
+
+
+### Faster browser reloads
+
+The dashboard restores its last known list/counts after a browser reload, then silently retrieves current metadata. The per-tab, per-account cache contains only document IDs, filenames, status and creation timestamps. It expires after 15 minutes, is cleared on sign-out/account changes, and never contains PDF bytes, signatures, recipient details, Storage paths/URLs or signing tokens. Blocked browser storage falls back to normal loading; oversized snapshots are not retained.
+
+List reads use the Supabase Data API directly with the existing authenticated owner/admin RLS policy, selecting only `id,title,status,created_at`. This avoids an Edge Function cold start and its extra authentication round trip for dashboard reads. Private PDF access and mutations continue through the Edge Function. No new database policy, migration or backend deployment is required.
+
+PDF rendering code loads only when a PDF is opened. The production build's initial compressed JavaScript dropped from approximately 274 KB to 139 KB; the separate PDF viewer chunk loads on demand. Network and authentication timing still depend on the client and service availability, while cached lists stay visible during revalidation.
