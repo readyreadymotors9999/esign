@@ -44,6 +44,7 @@ test("logo always returns home and account settings manage saved recipients", as
     r.fulfill({ contentType: "application/pdf", body: bytes }),
   );
   await page.route("https://test.supabase.co/**", (r) => {
+    if (r.request().url().includes("/auth/v1/logout")) return r.fulfill({ status: 204, body: "" });
     const body = r.request().url().includes("/rest/v1/documents")
       ? { action: "list" }
       : r.request().postDataJSON();
@@ -83,8 +84,9 @@ test("logo always returns home and account settings manage saved recipients", as
     page.getByRole("heading", { name: "Welcome back, Lichen" }),
   ).toBeVisible();
   await page
-    .getByRole("link", { name: "My Account", exact: true })
+    .getByRole("button", { name: "My Account", exact: true })
     .click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "My Account", exact: true }),
   ).toBeVisible();
@@ -197,4 +199,30 @@ test("logo always returns home and account settings manage saved recipients", as
     path: "/tmp/esign-home-navigation.png",
     fullPage: true,
   });
+  const account = page.getByRole("button", { name: "My Account", exact: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const accountBox = (await account.boundingBox())!;
+  expect(Math.abs(accountBox.x + accountBox.width - 1440 * 0.95)).toBeLessThanOrEqual(2);
+  await expect(page.getByRole("button", { name: "Sign out", exact: true })).toHaveCount(0);
+  await account.click();
+  await expect(page.getByRole("navigation", { name: "Account options" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(account).toBeFocused();
+  await expect(account).toHaveAttribute("aria-expanded", "false");
+  await account.click();
+  await page.getByRole("heading", { name: "Welcome back, Lichen" }).click();
+  await expect(account).toHaveAttribute("aria-expanded", "false");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await account.click();
+  const menuBox = (await page.getByRole("navigation", { name: "Account options" }).boundingBox())!;
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(390);
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+  await expect(page).toHaveURL(/#\/settings$/);
+  await account.click();
+  await page.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Less paperwork/ })).toBeVisible();
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.getByRole("button", { name: "My Account", exact: true })).toHaveCount(0);
+
 });

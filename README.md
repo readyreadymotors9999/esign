@@ -431,3 +431,5 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 ```
 
 Field-level signer dropdowns use the same opaque signer colour as their adjacent settings button, with white text/chevron and no border. This styling update is frontend-only.
+
+The rightmost header action is a My Account disclosure containing Settings and Sign out. Settings opens `#/settings`; successful sign-out clears the authenticated session and returns to the login view at `#/`. Outside click, Escape and navigation close the dropdown. This is frontend-only.

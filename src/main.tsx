@@ -10,6 +10,7 @@ import {
 } from "./documentCache";
 import { clearPdfMemory } from "./pdfMemory";
 import AccountSettings from "./AccountSettings";
+import { AccountMenu } from "./AccountMenu";
 import { PdfPreview as Pdf } from "./PdfPreview";
 import { type SignatureMethod } from "./Signature";
 import { SignatureDialog } from "./SignatureDialog";
@@ -79,21 +80,12 @@ function App() {
           </span>
         </a>
         {session && !token && (
-          <div className="account-actions">
-            <a
-              href="#/settings"
-              className="button secondary"
-              aria-label="My Account"
-            >
-              My Account
-            </a>
-            <button
-              className="secondary"
-              onClick={() => supabase.auth.signOut()}
-            >
-              Sign out
-            </button>
-          </div>
+          <AccountMenu onSignOut={async () => {
+            const { error } = await supabase.auth.signOut();
+            if (error) throw error;
+            location.hash = "/";
+            setHash("#/");
+          }} />
         )}
       </header>
       <main>

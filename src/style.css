@@ -1772,3 +1772,34 @@ summary:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .autosave-toast { animation: none; }
 }
+
+.account-actions { margin-left: auto; position: relative; }
+.account-trigger { display: flex; align-items: center; gap: 8px; }
+.account-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 200;
+  width: 180px;
+  padding: 6px;
+  border: 1px solid #dce5e2;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 28px #18342a24;
+}
+.account-dropdown a,
+.account-dropdown button {
+  display: block;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 6px;
+  text-align: left;
+  background: #fff;
+  color: #344957;
+  font: inherit;
+  font-size: 13px;
+}
+.account-dropdown a:hover,
+.account-dropdown button:hover { background: #eef5f1; }
+.account-dropdown p { margin: 8px; font-size: 12px; color: #a33228; }
