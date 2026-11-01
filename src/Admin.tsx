@@ -28,6 +28,16 @@ type DraftSnapshot = { path: string; title: string; fields: Field[]; signers: Do
 function documentStatus(document: DocumentSummary) {
   return document.status === "sent" && document.viewed_at ? "viewed" : document.status;
 }
+async function confirmSignerRoster(documentId: string, expected: DocumentSigner[], revision?: number) {
+  const confirmed = await api("detail", { documentId });
+  const saved = confirmed.document?.signers;
+  const emptyLegacyRoster = expected.length === 0 && saved === undefined;
+  if (!emptyLegacyRoster && (!Array.isArray(saved) || saved.length !== expected.length || expected.some(signer => !saved.some((value: DocumentSigner) => value.id === signer.id && value.email === signer.email && value.name === signer.name))))
+    throw new Error("The server did not save this document’s signer list. The save_draft endpoint needs document-signer support.");
+  if (revision !== undefined && confirmed.document.draft_revision !== revision)
+    throw new Error("This draft changed again while saving. Refresh before editing further.");
+  return confirmed;
+}
 export default function Admin({
   homeRequest,
   cachedDocuments,
@@ -85,6 +95,8 @@ export default function Admin({
   );
   const [recipientEditor, setRecipientEditor] = useState(false);
   const [recipientMode, setRecipientMode] = useState<"saved" | "new">("saved");
+  const [recipientEditing, setRecipientEditing] = useState(false);
+  const [signerAddError, setSignerAddError] = useState("");
   const [filter, setFilter] = useState("all");
   useEffect(() => {
     if (!recipientEditor) return;
@@ -93,9 +105,9 @@ export default function Admin({
       block: "nearest",
     });
     panel
-      ?.querySelector<HTMLElement>(recipientMode === "saved" ? "select" : "input")
+      ?.querySelector<HTMLElement>(recipientMode === "saved" && !recipientEditing ? "select" : "input")
       ?.focus({ preventScroll: true });
-  }, [recipientEditor, recipientMode]);
+  }, [recipientEditor, recipientMode, recipientEditing]);
   const [autosaveAvailable, setAutosaveAvailable] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [autosaveToast, setAutosaveToast] = useState("");
@@ -120,6 +132,7 @@ export default function Admin({
     const saver = new DraftSaver({ fields, signers: documentSigners }, document.draft_revision || 0,
       async (layout, revision) => {
         const result = await api("save_draft", { documentId: document.id, expectedPath: document.original_path, ...layout, revision });
+        await confirmSignerRoster(document.id, layout.signers, result.revision);
         return result.revision;
       },
       (status) => { if (draftSaver.current === saver) setSaveStatus(status); },
@@ -295,7 +308,7 @@ export default function Admin({
     try {
       const data = await api("detail", { documentId: id });
       if (request !== detailRequest.current) return false;
-      setSignersAvailable(data.capabilities?.documentSigners === true);
+      setSignersAvailable(data.capabilities?.documentSigners === true || Array.isArray(data.document.signers));
       setRestoreAvailable(data.capabilities?.draftRestore === true);
       setAutosaveAvailable(data.capabilities?.draftAutosave === true);
       setEditingAvailable(data.capabilities?.pdfEditing === true);
@@ -723,14 +736,20 @@ export default function Admin({
                         </button>
                       </div>
                       <div className="signer-source" role="group" aria-label="Add signer source">
-                        <button type="button" className={recipientMode === "saved" ? "active" : "secondary"} aria-pressed={recipientMode === "saved"} onClick={() => setRecipientMode("saved")}>Choose from recipients</button>
-                        <button type="button" className={recipientMode === "new" ? "active" : "secondary"} aria-pressed={recipientMode === "new"} onClick={() => { setRecipientMode("new"); setRecipientId(""); setEmail(""); setFirst(""); setLast(""); }}>Add new signer</button>
+                        <button type="button" className={recipientMode === "saved" ? "active" : "secondary"} aria-pressed={recipientMode === "saved"} onClick={() => {
+                          setRecipientMode("saved"); setRecipientEditing(false); setSignerAddError("");
+                          const contact = recipients.find(value => value.id === recipientId);
+                          setFirst(contact?.first_name || ""); setLast(contact?.last_name || ""); setEmail(contact?.email || "");
+                        }}>Choose from recipients</button>
+                        <button type="button" className={recipientMode === "new" ? "active" : "secondary"} aria-pressed={recipientMode === "new"} onClick={() => { setRecipientMode("new"); setRecipientEditing(false); setSignerAddError(""); setRecipientId(""); setEmail(""); setFirst(""); setLast(""); }}>Add new signer</button>
                       </div>
-                      {recipientMode === "saved" && <label>
+                      {recipientMode === "saved" && !recipientEditing && <label>
                         Saved recipient
                         <select
                           value={recipientId}
                           onChange={(e) => {
+                            setSignerAddError("");
+                            setRecipientEditing(false);
                             const r = recipients.find(
                               (r) => r.id === e.target.value,
                             );
@@ -756,6 +775,14 @@ export default function Admin({
                           ))}
                         </select>
                       </label>}
+                      {recipientMode === "saved" && !recipientEditing && recipientId && (
+                        <div className="selected-recipient-summary">
+                          <strong>{`${first} ${last}`.trim() || email}</strong>
+                          <span>{email}</span>
+                          <button type="button" className="secondary" onClick={() => setRecipientEditing(true)}>Edit</button>
+                        </div>
+                      )}
+                      {(recipientMode === "new" || recipientEditing) && <>
                       <div className="name-fields">
                         <label>
                           Recipient first name
@@ -785,23 +812,24 @@ export default function Admin({
                           onChange={(e) => setEmail(e.target.value)}
                         />
                       </label>
+                      </>}
                       <button
                         type="button"
                         className="recipient-save"
-                        aria-describedby={!signersAvailable ? "signer-setup-required" : undefined}
-                        disabled={
-                          !signersAvailable || busy ||
-                          !first.trim() ||
-                          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-                        }
+                        aria-describedby={signerAddError ? "signer-add-error" : undefined}
+                        disabled={busy || (recipientMode === "saved" && !recipientEditing
+                          ? !recipientId
+                          : !first.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))}
                         onClick={() =>
                           task(async () => {
+                            setSignerAddError("");
+                            try {
                             const normalizedEmail = email.trim().toLowerCase();
                             if (normalizedEmail === "readyreadymotors9999@gmail.com") throw new Error("Lichen Wang is already this document’s company signer.");
                             if (documentSigners.length >= 10 && !documentSigners.some(signer => signer.email === normalizedEmail)) throw new Error("A document can contain up to 10 additional signers.");
                             const contact = recipients.find(value => value.id === recipientId);
                             const unchangedContact = contact && contact.email.trim().toLowerCase() === normalizedEmail && contact.first_name === first.trim() && contact.last_name === last.trim();
-                            const saved = unchangedContact ? { recipient: contact } : await api("save_recipient", {
+                            const saved = (contact && recipientMode === "saved" && !recipientEditing) || unchangedContact ? { recipient: contact! } : await api("save_recipient", {
                               recipientId: recipientId || undefined,
                               email,
                               firstName: first,
@@ -809,22 +837,35 @@ export default function Admin({
                             });
                             setRecipientId(saved.recipient.id);
                             const existing = documentSigners.find(signer => signer.email === normalizedEmail || signer.recipientId === saved.recipient.id);
-                            const signer = { id: existing?.id || (documentSigners.length === 0 ? "recipient" : crypto.randomUUID()), recipientId: saved.recipient.id, email: normalizedEmail, name: `${first} ${last}`.trim() };
+                            const signer = { id: existing?.id || (documentSigners.length === 0 ? "recipient" : crypto.randomUUID()), recipientId: saved.recipient.id, email: normalizedEmail, name: `${first} ${last}`.trim() || normalizedEmail };
                             const nextSigners = existing ? documentSigners.map(value => value.id === existing.id ? signer : value) : [...documentSigners, signer];
                             setDocumentSigners(nextSigners);
-                            draftSaver.current?.update({ fields, signers: nextSigners });
-                            await draftSaver.current?.flush();
+                            if (draftSaver.current) {
+                              draftSaver.current.update({ fields, signers: nextSigners });
+                              await draftSaver.current.retry();
+                            } else {
+                              const result = await api("save_draft", { documentId: selected.id, expectedPath: selected.original_path, revision: selected.draft_revision || 0, fields, signers: nextSigners });
+                              const confirmed = await confirmSignerRoster(selected.id, nextSigners, result.revision);
+                              setAutosaveAvailable(true);
+                              setSelected({ ...selected, fields, signers: nextSigners, draft_revision: confirmed.document.draft_revision });
+                            }
+                            setSignersAvailable(true);
                             await refreshRecipients();
                             setRecipientEditor(false);
                             setMessage(
-                              "Recipient saved and added as a signer for this document.",
+                              "Recipient added as a signer for this document.",
                             );
+                            } catch (error) {
+                              const message = error instanceof Error ? error.message : "Unable to add signer.";
+                              setSignerAddError(message);
+                              throw error;
+                            }
                           })
                         }
                       >
-                        {busy ? "Saving…" : documentSigners.some(signer => signer.recipientId === recipientId) ? "Update document signer" : recipientId ? "Add as signer" : "Save and add as signer"}
+                        {busy ? "Saving…" : documentSigners.some(signer => signer.recipientId === recipientId) ? "Update document signer" : recipientMode === "saved" && !recipientEditing && recipientId ? "Add as signer" : "Save and add as signer"}
                       </button>
-                      {!signersAvailable && <p id="signer-setup-required" className="notice">Adding document signers is not enabled on the server yet. Deploy the latest Supabase update, then refresh this document.</p>}
+                      {signerAddError && <p id="signer-add-error" className="error" role="alert">{signerAddError}</p>}
                       {documentSigners.some(signer => signer.email === email.trim().toLowerCase()) && (
                         <button type="button" className="secondary danger-link" disabled={busy} onClick={() => {
                           const signer = documentSigners.find(signer => signer.email === email.trim().toLowerCase());
@@ -1059,7 +1100,9 @@ export default function Admin({
                       onRecipientHost={setRecipientHost}
                       onChooseRecipient={(id) => {
                         setRecipientMode(id === "__new" ? "new" : "saved");
+                        setSignerAddError("");
                         const signer = documentSigners.find(signer => signer.id === id);
+                        setRecipientEditing(!!signer);
                         if (signer) {
                           const contact = recipients.find(contact => contact.email === signer.email);
                           setRecipientId(contact?.id || signer.recipientId || ""); setEmail(signer.email);

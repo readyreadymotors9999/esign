@@ -16,7 +16,9 @@ test("logo always returns home and account settings manage saved recipients", as
       email: "test@qq.com",
     },
   ];
-  const doc = {
+  const doc: any = {
+    signers: [],
+    draft_revision: 0,
     id,
     title: "Agreement.pdf",
     status: "draft",
@@ -48,6 +50,10 @@ test("logo always returns home and account settings manage saved recipients", as
     const body = r.request().url().includes("/rest/v1/documents")
       ? { action: "list" }
       : r.request().postDataJSON();
+    if (body.action === "save_draft") {
+      doc.fields = body.fields; doc.signers = body.signers; doc.draft_revision++;
+      return r.fulfill({json:{revision:doc.draft_revision}});
+    }
     if (body.action === "list") return r.fulfill({ json: [doc] });
     if (body.action === "recipients")
       return r.fulfill({ json: { recipients } });
@@ -141,12 +147,14 @@ test("logo always returns home and account settings manage saved recipients", as
       attempt === 0
         ? "55555555-5555-4555-8555-555555555555"
         : "66666666-6666-4666-8666-666666666666";
-    await expect(page.getByLabel("Field signer").locator("option")).toHaveCount(3);
+    await expect(page.getByLabel("Field signer").locator("option")).toHaveCount(3 + attempt);
     await page.getByLabel("Field signer").selectOption("manage");
     await page.getByLabel("Saved recipient").selectOption(selectedId);
     await page.getByRole("button", { name: "Add as signer", exact: true }).click();
-    await page.getByLabel("Field signer").selectOption("recipient");
-    await expect(page.getByLabel("Field signer")).toHaveValue("recipient");
+    await expect.poll(() => doc.signers.some((signer: any) => signer.recipientId === selectedId)).toBe(true);
+    const ownerId = doc.signers.find((signer: any) => signer.recipientId === selectedId).id;
+    await page.getByLabel("Field signer").selectOption(ownerId);
+    await expect(page.getByLabel("Field signer")).toHaveValue(ownerId);
     await expect(
       page
         .getByLabel("Field signer")
@@ -170,7 +178,7 @@ test("logo always returns home and account settings manage saved recipients", as
     await page
       .getByRole("button", { name: "Close recipient editor", exact: true })
       .click();
-    await page.getByLabel("Field signer").selectOption("manage");
+    await page.getByLabel("Field signer").selectOption("new");
     await expect(page.getByLabel("Recipient first name")).toBeVisible();
     expect(
       await page

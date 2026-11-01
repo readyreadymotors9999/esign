@@ -3,6 +3,7 @@ import { PDFDocument } from "pdf-lib";
 
 test("document signer roster excludes unselected contacts and signatures apply one box at a time", async ({page}) => {
   let documentSignersReady = false;
+  let ignoreRoster = false;
   const contacts = [
     {id:"alice",first_name:"Alice",last_name:"Chen",email:"alice@example.com"},
     {id:"bob",first_name:"Bob",last_name:"Wu",email:"bob@example.com"},
@@ -28,7 +29,7 @@ test("document signer roster excludes unselected contacts and signatures apply o
       return route.fulfill({json:{recipient:contact}});
     }
     if(body.action==="save_draft"){
-      expect(body.revision).toBe(doc.draft_revision);doc.fields=body.fields;doc.signers=body.signers;doc.draft_revision++;
+      expect(body.revision).toBe(doc.draft_revision);doc.fields=body.fields;if(!ignoreRoster)doc.signers=body.signers;doc.draft_revision++;
       return route.fulfill({json:{revision:doc.draft_revision}});
     }
     return route.fulfill({status:400,json:{error:"Unexpected action"}});
@@ -39,13 +40,6 @@ test("document signer roster excludes unselected contacts and signatures apply o
   await expect(signer).toHaveValue("company");
   await expect(signer.locator("option")).toHaveCount(3);
   await expect(signer).not.toContainText("Alice");await expect(signer).not.toContainText("Carol");
-  await signer.selectOption("manage");
-  await page.getByLabel("Saved recipient").selectOption("alice");
-  await expect(page.getByRole("button",{name:"Add as signer",exact:true})).toBeDisabled();
-  await expect(page.getByText("Adding document signers is not enabled on the server yet.",{exact:false})).toBeVisible();
-  documentSignersReady = true;
-  await page.reload();
-  await page.getByRole("button",{name:/PDF Selected signers/}).click();
   const first=page.getByRole("button",{name:"Open company signature field 1 on page 1",exact:true});
   await first.click();
   await page.getByRole("dialog").getByRole("button",{name:"Add signature",exact:true}).click();
@@ -63,6 +57,16 @@ test("document signer roster excludes unselected contacts and signatures apply o
     await signer.selectOption("manage");
     await page.getByLabel("Saved recipient").selectOption(contact.id);
     await expect(signer).not.toContainText(contact.first_name);
+    await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
+    await expect(page.getByLabel("Recipient email",{exact:true})).toHaveCount(0);
+    await expect(page.getByRole("button",{name:"Add as signer",exact:true})).toBeEnabled();
+    if(contact.id === "alice") {
+      await page.getByRole("button",{name:"Edit",exact:true}).click();
+      await expect(page.getByLabel("Recipient first name")).toHaveValue("Alice");
+      await expect(page.getByLabel("Recipient email",{exact:true})).toHaveValue("alice@example.com");
+      await page.getByRole("button",{name:"Choose from recipients",exact:true}).click();
+      await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
+    }
     await page.getByRole("button",{name:"Add as signer",exact:true}).click();
     await expect(signer).toContainText(contact.first_name);
   }
@@ -87,4 +91,13 @@ test("document signer roster excludes unselected contacts and signatures apply o
   await page.reload();await page.getByRole("button",{name:/PDF Selected signers/}).click();
   await expect(page.getByLabel("Field signer",{exact:true}).locator("option")).toHaveCount(6);
   await expect(page.locator(".field-content img")).toHaveCount(0);
+  ignoreRoster = true;
+  await page.getByLabel("Field signer",{exact:true}).selectOption("manage");
+  await page.getByLabel("Saved recipient").selectOption("carol");
+  await page.getByRole("button",{name:"Add as signer",exact:true}).click();
+  await expect(page.getByRole("alert")).toContainText("The server did not save this document’s signer list");
+  await expect(page.getByLabel("Manage recipient",{exact:true})).toBeVisible();
+  await expect(page.getByText(/^Draft not saved:/)).toBeVisible();
+  expect(doc.signers.some((signer:any)=>signer.email==="carol@example.com")).toBe(false);
+
 });

@@ -1816,3 +1816,15 @@ summary:focus-visible,
 }
 .signer-source { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
 .signer-source button { flex: 1; font-size: 12px; }
+
+.selected-recipient-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 12px 0;
+}
+.selected-recipient-summary strong,
+.selected-recipient-summary span { overflow-wrap: anywhere; }
+.selected-recipient-summary span { color: #60766d; font-size: 12px; }
+.selected-recipient-summary button { margin-left: auto; }
