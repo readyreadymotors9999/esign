@@ -127,19 +127,21 @@ test.describe("High density PDF preview", () => {
           doc.fields = b.fields;
           doc.title = b.title;
           doc.original_path = b.path;
+          doc.signers = b.signers;
           doc.draft_revision++;
           return r.fulfill({ json: { ok: true } });
         }
         if (b.action === "save_draft") {
           expect(b.revision).toBe(doc.draft_revision);
           doc.fields = b.fields;
+          doc.signers = b.signers;
           doc.draft_revision++;
           return r.fulfill({ json: { revision: doc.draft_revision } });
         }
         if (b.action === "detail")
           return r.fulfill({
             json: {
-              capabilities: { draftAutosave: true, draftRestore: true },
+              capabilities: { draftAutosave: true, draftRestore: true, documentSigners: true },
               document: doc,
               url: "/fixture.pdf",
               audit: sent
@@ -164,7 +166,8 @@ test.describe("High density PDF preview", () => {
           expect(b.recipientName).toBe("Test Recipient");
           expect(b.recipientFirstName).toBe("Test");
           expect(b.recipientLastName).toBe("Recipient");
-          if (delivery === "share") expect(b.recipientId).toBeUndefined();
+          expect(b.signers).toHaveLength(1);
+          expect(b.appliedSignatureFields).toHaveLength(1);
           saved = true;
           expect(b.fields).toHaveLength(4);
           expect(
@@ -359,9 +362,8 @@ test.describe("High density PDF preview", () => {
       await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
       await page.getByLabel("Recipient email").fill("123456@qq.com");
-      await page
-        .getByRole("button", { name: "Close recipient editor", exact: true })
-        .click();
+      await expect(page.getByLabel("Field signer").locator('option[value="recipient"]')).toHaveCount(0);
+      await page.getByRole("button", { name: "Save and add as signer", exact: true }).click();
       await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
       await page.getByLabel("Field signer").selectOption("recipient");
       await page
@@ -504,9 +506,7 @@ test.describe("High density PDF preview", () => {
           exact: true,
         })
         .click();
-      await page
-        .getByRole("button", { name: "Close signature dialog", exact: true })
-        .click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
       await page
         .getByRole("button", { name: "Field settings 1", exact: true })
         .click();
@@ -514,13 +514,17 @@ test.describe("High density PDF preview", () => {
         .getByRole("menuitem", { name: "Duplicate", exact: true })
         .click();
       await expect(page.locator(".field")).toHaveCount(5);
-      await expect(page.locator(".field-content img")).toHaveCount(2);
+      await expect(page.locator(".field-content img")).toHaveCount(1);
       await page
         .getByRole("button", {
           name: "Open company signature field 5 on page 1",
           exact: true,
         })
         .click();
+      await expect(page.getByRole("dialog")).toHaveCount(0);
+      await expect(page.locator(".field-content img")).toHaveCount(2);
+      await page.getByRole("button", { name: "Field settings 5", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Change signature style", exact: true }).click();
       await expect(
         page.getByRole("dialog").getByRole("button", {
           name: delivery === "share" ? "Type signature" : "Draw signature",
@@ -539,21 +543,21 @@ test.describe("High density PDF preview", () => {
       await expect(
         page.locator('.field:has(select[aria-label="Signer for field 5"])'),
       ).toHaveCSS("border-color", companyColor);
-      await expect(page.locator(".field-content img")).toHaveCount(2);
+      await expect(page.locator(".field-content img")).toHaveCount(1);
       await page
         .getByRole("button", { name: "Field settings 5", exact: true })
         .click();
       await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(4);
       await page
-        .getByRole("button", { name: "Edit recipient", exact: true })
+        .getByRole("button", { name: "Edit signer", exact: true })
         .click();
       await page.getByLabel("Recipient first name").fill("Test");
       await page.getByLabel("Recipient last name").fill("Recipient");
       await page.getByLabel("Recipient email").fill("123456@qq.com");
       if (delivery === "email") {
         await page
-          .getByRole("button", { name: "Save recipient", exact: true })
+          .getByRole("button", { name: "Update document signer", exact: true })
           .click();
         await expect(page.locator(".notice[role=status]")).toContainText("Recipient saved");
         await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
@@ -566,12 +570,12 @@ test.describe("High density PDF preview", () => {
           page.getByLabel("Field signer").locator('option[value="recipient"]'),
         ).toHaveCount(1);
         await page
-          .getByRole("button", { name: "Edit recipient", exact: true })
+          .getByRole("button", { name: "Edit signer", exact: true })
           .click();
         await page.getByLabel("Saved recipient").selectOption("recipient-1");
         await page.getByLabel("Recipient last name").fill("Recipient");
         await page
-          .getByRole("button", { name: "Update recipient", exact: true })
+          .getByRole("button", { name: "Update document signer", exact: true })
           .click();
         await expect(page.locator(".notice[role=status]")).toContainText("Recipient saved");
       }
@@ -644,7 +648,7 @@ for (const method of ["drawn", "typed"])
                 title: "Vehicle purchase agreement",
                 email: "123456@qq.com",
                 recipient_name: "Test Recipient",
-                fields: recipientFields,
+                fields: [...recipientFields, { page: 1, type: "signature", signer: "recipient", x: 0.4, y: 0.5, width: 0.25, height: 0.04 }],
                 expires_at: new Date(Date.now() + 3600000).toISOString(),
                 url: "/fixture.pdf",
               },
@@ -655,6 +659,7 @@ for (const method of ["drawn", "typed"])
         return r.fulfill({ json: { ok: true } });
       }
       if (b.action === "complete") {
+        expect(b.appliedSignatureFields).toHaveLength(2);
         expect(b.consent).toBe(true);
         expect(b.signatureMethod).toBe(method);
         expect(b.name).toBe("Test Recipient");
@@ -711,6 +716,12 @@ for (const method of ["drawn", "typed"])
       .click();
     await expect(page.locator(".field-content img")).toHaveCount(1);
     await expect(page.locator(".date-value")).toHaveText(/\d{2}\/\d{2}\/\d{4}/);
+    await expect(page.getByRole("button", { name: "Agree & sign document" })).toBeDisabled();
+    await page.getByRole("button", { name: "Open recipient signature field 3 on page 1", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator(".field-content img")).toHaveCount(2);
+    await page.getByRole("button", { name: "Open recipient signature field 1 on page 2", exact: true }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await page.getByRole("button", { name: "Agree & sign document" }).click();
     await expect(
       page.getByRole("heading", { name: "You’re all signed." }),
@@ -884,13 +895,14 @@ for (const viewport of [
       const b = request.url().includes("/rest/v1/documents")
         ? { action: "list" }
         : request.postDataJSON();
+      if (b.action === "save_recipient") return r.fulfill({json:{recipient:{id:"test-contact",email:b.email,first_name:b.firstName,last_name:b.lastName}}});
       if (b.action === "list") return r.fulfill({ json: [doc] });
       if (b.action === "recipients")
         return r.fulfill({ json: { recipients: [] } });
       if (b.action === "detail")
         return r.fulfill({
           json: {
-            capabilities: { pdfEditing: true, pdfPageRanges: true },
+            capabilities: { pdfEditing: true, pdfPageRanges: true, documentSigners: true },
             document: doc,
             url: `/fixture.pdf?v=${revision}`,
             audit: [],
@@ -1069,9 +1081,7 @@ for (const viewport of [
     await page.getByLabel("Field signer").selectOption("manage");
     await page.getByLabel("Recipient first name").fill("Other");
     await page.getByLabel("Recipient email").fill("other@qq.com");
-    await page
-      .getByRole("button", { name: "Close recipient editor", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Save and add as signer", exact: true }).click();
     await page
       .getByRole("button", {
         name: "Open company signature field 1 on page 1",

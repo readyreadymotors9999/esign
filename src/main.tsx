@@ -15,6 +15,7 @@ import { PdfPreview as Pdf } from "./PdfPreview";
 import { type SignatureMethod } from "./Signature";
 import { SignatureDialog } from "./SignatureDialog";
 import { useSigningDate } from "./useSigningDate";
+import { signatureFieldKey } from "../supabase/functions/_shared/validation";
 import "./style.css";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -205,6 +206,8 @@ function Signer({ token }: { token: string }) {
   const [showSignature, setShowSignature] = useState(false),
     [dateApplied, setDateApplied] = useState(false);
   const [pdfReady, setPdfReady] = useState(false);
+  const [appliedSignatures, setAppliedSignatures] = useState<Set<string>>(new Set());
+  const [signatureTarget, setSignatureTarget] = useState<string>();
   const [data, setData] = useState<any>(),
     [error, setError] = useState(""),
     [signature, setSignature] = useState(""),
@@ -239,6 +242,7 @@ function Signer({ token }: { token: string }) {
           onClose={() => setShowSignature(false)}
           onAccept={(png, method) => {
             setSignature(png);
+            if (signatureTarget) setAppliedSignatures(current => new Set([...current, signatureTarget]));
             setSignatureMethod(method);
             setConsent(true);
             setDateApplied(true);
@@ -266,12 +270,19 @@ function Signer({ token }: { token: string }) {
               fields={data.fields}
               onReady={setPdfReady}
               onFieldActivate={(_, field) => {
-                if (field.type === "signature") setShowSignature(true);
-                else setDateApplied(true);
+                if (field.type === "signature") {
+                  const key = signatureFieldKey(field);
+                  if (appliedSignatures.has(key)) return;
+                  if (signature) setAppliedSignatures(current => new Set([...current, key]));
+                  else { setSignatureTarget(key); setShowSignature(true); }
+                } else setDateApplied(true);
               }}
-              signaturePreviews={{ recipient: signature }}
-              datePreviews={{ recipient: dateApplied ? today : undefined }}
-              signerNames={{ recipient: name || "Recipient" }}
+              appliedSignatureFields={appliedSignatures}
+              editableSigners={[data.signer_id || "recipient"]}
+              onChangeSignature={(_, field) => { setSignatureTarget(signatureFieldKey(field)); setShowSignature(true); }}
+              signaturePreviews={{ [data.signer_id || "recipient"]: signature }}
+              datePreviews={{ [data.signer_id || "recipient"]: dateApplied ? today : undefined }}
+              signerNames={{ [data.signer_id || "recipient"]: name || "Recipient" }}
             />
           </div>
           <form
@@ -285,6 +296,7 @@ function Signer({ token }: { token: string }) {
                 await api("complete", {
                   token,
                   signature,
+                  appliedSignatureFields: [...appliedSignatures],
                   signatureMethod,
                   signingDate: today,
                   name,
@@ -311,8 +323,7 @@ function Signer({ token }: { token: string }) {
             </label>
             <label>Your signature</label>
             <p>
-              Click your signature field on the PDF to type or draw your
-              signature. Your dates use MM/DD/YYYY.
+              Choose your style once, then click each remaining signature box to sign it. Use the field settings menu to change your style. Dates use MM/DD/YYYY.
             </p>
             <label className="consent">
               <input
@@ -336,7 +347,7 @@ function Signer({ token }: { token: string }) {
                 {error}
               </p>
             )}
-            <button disabled={busy || !signature || !consent || !pdfReady}>
+            <button disabled={busy || !signature || !consent || !pdfReady || data.fields.some((field: any) => field.type === "signature" && !appliedSignatures.has(signatureFieldKey(field)))}>
               {busy ? "Securely saving…" : "Agree & sign document →"}
             </button>
           </form>

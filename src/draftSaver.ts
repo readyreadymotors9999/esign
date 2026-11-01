@@ -7,13 +7,13 @@ export class DraftSaver {
   private running?: Promise<void>;
   private failure?: Error;
   private revision: number;
-  private write: (fields: any[], revision: number) => Promise<number>;
+  private write: (fields: any, revision: number) => Promise<number>;
   private status: (value: string) => void;
   private onAutosaved?: () => void;
   constructor(
     initial: unknown,
     revision: number,
-    write: (fields: any[], revision: number) => Promise<number>,
+    write: (fields: any, revision: number) => Promise<number>,
     status: (value: string) => void,
     onAutosaved?: () => void,
   ) {

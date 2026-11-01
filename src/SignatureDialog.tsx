@@ -52,7 +52,7 @@ export function SignatureDialog({
         onMethodChange={setDraftMethod}
       />
       <small>
-        Add signature applies this electronic signature to your assigned fields.
+        Add signature applies your chosen style to this signature box. Click other empty signature boxes to reuse it. Changing the style updates your signed boxes.
         It is saved when you submit the document.
       </small>
       <div className="dialog-actions">

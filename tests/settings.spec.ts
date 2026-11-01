@@ -57,7 +57,7 @@ test("logo always returns home and account settings manage saved recipients", as
           document: doc,
           url: "/fixture.pdf",
           audit: [],
-          capabilities: { pdfEditing: true, pdfPageRanges: true },
+          capabilities: { pdfEditing: true, pdfPageRanges: true, documentSigners: true },
         },
       });
     if (body.action === "save_recipient") {
@@ -141,7 +141,11 @@ test("logo always returns home and account settings manage saved recipients", as
       attempt === 0
         ? "55555555-5555-4555-8555-555555555555"
         : "66666666-6666-4666-8666-666666666666";
-    await page.getByLabel("Field signer").selectOption(`contact:${selectedId}`);
+    await expect(page.getByLabel("Field signer").locator("option")).toHaveCount(2);
+    await page.getByLabel("Field signer").selectOption("manage");
+    await page.getByLabel("Saved recipient").selectOption(selectedId);
+    await page.getByRole("button", { name: "Save and add as signer", exact: true }).click();
+    await page.getByLabel("Field signer").selectOption("recipient");
     await expect(page.getByLabel("Field signer")).toHaveValue("recipient");
     await expect(
       page
@@ -152,7 +156,7 @@ test("logo always returns home and account settings manage saved recipients", as
       page.getByLabel("Field signer").locator('option[value="edit"]'),
     ).toHaveCount(0);
     await page
-      .getByRole("button", { name: "Edit recipient", exact: true })
+      .getByRole("button", { name: "Edit signer", exact: true })
       .click();
     await expect(page.getByLabel("Recipient first name")).toHaveValue(
       attempt === 0 ? "New" : "Other",
@@ -161,7 +165,7 @@ test("logo always returns home and account settings manage saved recipients", as
       page.getByRole("button", { name: "Done", exact: true }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Update recipient", exact: true }),
+      page.getByRole("button", { name: "Update document signer", exact: true }),
     ).toHaveCSS("background-color", "rgb(22, 107, 89)");
     await page
       .getByRole("button", { name: "Close recipient editor", exact: true })

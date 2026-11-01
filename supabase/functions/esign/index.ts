@@ -12,13 +12,12 @@ import { editPdf, type PdfEdit } from "../_shared/edit-pdf.ts";
 import { generateSignedPdf } from "../_shared/pdf.ts";
 import {
   emailAddress,
-  validateFields,
   tokenValue,
   placement,
   ValidationError,
   signaturePng,
   signatureMethodValue,
-  twoPartyFields,
+  documentSigners, documentFields, requireAppliedSignatures,
 } from "../_shared/validation.ts";
 const env = (key: string) => {
   const v = Deno.env.get(key);
@@ -117,7 +116,8 @@ async function deliverNotifications(documentId?: string) {
           check(error);
           if (!session || session.status !== "completed" || session.document_id !== notice.document_id) throw new Error("Completion unavailable");
           const document = await documentFor(notice.document_id);
-          const path = `${notice.document_id}/signed-${notice.session_id}.pdf`;
+          const path = document.signed_path;
+          if (!path || document.status !== "completed") throw new Error("Final PDF unavailable");
           const filename = document.title.replace(/[\r\n\/\\]/g, "-").replace(/\.pdf$/i, "") + " - completed.pdf";
           attachment = { filename, bytes: await original(path) };
         }
@@ -216,18 +216,20 @@ async function complete(body: any, request: Request) {
     p_hash: hash,
   });
   if (error || !s)
-    fail("This signing link is expired, used, or already in progress.", 410);
+    fail("This link is unavailable or another participant is signing. Please retry shortly.", 409);
   const path = `${s.document_id}/signed-${s.id}.pdf`;
   let stored = false,
     finished = false;
   try {
     const doc = await documentFor(s.document_id);
-    const source = await original(doc.prepared_path || doc.original_path);
+    const source = await original(doc.working_path || doc.prepared_path || doc.original_path);
+    const assigned = doc.fields.filter((field: any) => (field.signer || "recipient") === s.signer_id);
+    requireAppliedSignatures(assigned, body.appliedSignatureFields);
     const now = new Date().toISOString();
     const bytes = await generateSignedPdf(
       source,
       png,
-      { ...doc, fields: doc.fields.filter((f: any) => f.signer !== "company") },
+      { ...doc, fields: assigned },
       s.id,
       s.recipient_email,
       body.name.trim(),
@@ -333,10 +335,11 @@ Deno.serve(async (request) => {
       return json({
         title: doc.title,
         email: s.recipient_email,
-        fields: doc.fields.filter((f: any) => f.signer !== "company"),
-        recipient_name: doc.recipient_name,
+        fields: doc.fields.filter((f: any) => (f.signer || "recipient") === s.signer_id),
+        signer_id: s.signer_id,
+        recipient_name: s.signer_name || doc.recipient_name,
         expires_at: s.expires_at,
-        url: await signedUrl(doc.prepared_path || doc.original_path),
+        url: await signedUrl(doc.working_path || doc.prepared_path || doc.original_path),
       });
     }
     if (body.action === "viewed") {
@@ -440,9 +443,9 @@ Deno.serve(async (request) => {
       check(error);
       if (!version) fail("Unknown document version.", 409);
       const pdf = await PDFDocument.load(await original(version.path));
-      const fields = validateFields(body.fields, pdf.getPageCount(), false);
-      if (fields.some((field) => !["company", "recipient"].includes(field.signer || ""))) fail("Invalid field signer.");
-      const result = await db.rpc("restore_draft", { p_document: doc.id, p_owner: user.id, p_expected_path: body.expectedPath, p_revision: body.revision, p_path: version.path, p_fields: fields, p_title: body.title.trim() });
+      const signers = documentSigners(body.signers ?? doc.signers);
+      const fields = documentFields(body.fields, pdf.getPageCount(), signers, false);
+      const result = await db.rpc("restore_document_draft", { p_signers: signers, p_document: doc.id, p_owner: user.id, p_expected_path: body.expectedPath, p_revision: body.revision, p_path: version.path, p_fields: fields, p_title: body.title.trim() });
       if (result.error) fail("Document changed. Refresh before restoring.", 409);
       return json({ ok: true });
     }
@@ -451,11 +454,10 @@ Deno.serve(async (request) => {
         fail("Document changed. Refresh before saving.", 409);
       if (!Number.isInteger(body.revision) || body.revision < 0) fail("Invalid draft revision.");
       const pdf = await PDFDocument.load(await original(doc.original_path));
-      const fields = validateFields(body.fields, pdf.getPageCount(), false);
-      if (fields.some((field) => !["company", "recipient"].includes(field.signer || "")))
-        fail("Invalid field signer.");
+      const signers = documentSigners(body.signers ?? doc.signers);
+      const fields = documentFields(body.fields, pdf.getPageCount(), signers, false);
       const { data, error } = await db.from("documents")
-        .update({ fields, draft_revision: body.revision + 1 })
+        .update({ fields, signers, draft_revision: body.revision + 1 })
         .eq("id", doc.id).eq("status", "draft").eq("original_path", body.expectedPath)
         .eq("draft_revision", body.revision).select("draft_revision").maybeSingle();
       check(error);
@@ -569,7 +571,7 @@ Deno.serve(async (request) => {
         .order("created_at");
       check(error);
       return json({
-        capabilities: { pdfEditing: true, pdfPageRanges: true, draftAutosave: true, draftRestore: true },
+        capabilities: { pdfEditing: true, pdfPageRanges: true, draftAutosave: true, draftRestore: true, documentSigners: true },
         document: doc,
         audit: data,
         url:
@@ -577,7 +579,7 @@ Deno.serve(async (request) => {
             ? null
             : await signedUrl(
                 doc.signed_path ||
-                  (doc.status === "sent" ? doc.prepared_path : null) ||
+                  (doc.status === "sent" ? doc.working_path || doc.prepared_path : null) ||
                   doc.original_path,
               ),
       });
@@ -617,25 +619,11 @@ Deno.serve(async (request) => {
       if (!["email", "share"].includes(body.delivery))
         fail("Choose email invitation or share link.");
       const delivery = body.delivery;
-      if (
-        typeof body.recipientName !== "string" ||
-        !body.recipientName.trim() ||
-        body.recipientName.length > 150
-      )
-        fail("Enter the recipient's full name.");
-      const email = emailAddress(body.email);
-      await persistRecipient(user.id, {
-        email,
-        firstName:
-          body.recipientFirstName ?? body.recipientName.trim().split(/\s+/)[0],
-        lastName:
-          body.recipientLastName ??
-          body.recipientName.trim().split(/\s+/).slice(1).join(" "),
-        recipientId: body.recipientId,
-      });
+      const signers = documentSigners(doc.signers);
+      if (!signers.length) fail("Add at least one signer to this document.");
       const source = await original(doc.original_path);
-      const pdf = await PDFDocument.load(source),
-        fields = twoPartyFields(body.fields, pdf.getPageCount());
+      const pdf = await PDFDocument.load(source), fields = documentFields(body.fields, pdf.getPageCount(), signers);
+      requireAppliedSignatures(fields.filter(field => field.signer === "company"), body.appliedSignatureFields);
       // Verify all fields map to valid page rotations before sending an invitation.
       for (const f of fields) {
         const p = pdf.getPage(f.page - 1);
@@ -646,9 +634,10 @@ Deno.serve(async (request) => {
         delivery === "email"
           ? await gmailAccessToken(gmailConfig((name) => Deno.env.get(name)))
           : "";
-      const token = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-        .map((v) => v.toString(16).padStart(2, "0"))
-        .join("");
+      const sessions = await Promise.all(signers.map(async signer => {
+        const token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(value => value.toString(16).padStart(2, "0")).join("");
+        return { id: crypto.randomUUID(), signer_id: signer.id, name: signer.name, email: signer.email, token, hash: await digest(token) };
+      }));
       const signedAt = new Date().toISOString(),
         attempt = crypto.randomUUID();
       const preparedPath = `${user.id}/${doc.id}/prepared-${attempt}.pdf`;
@@ -672,15 +661,10 @@ Deno.serve(async (request) => {
           upsert: false,
         });
       check(preparedError);
-      const { data: sid, error } = await db.rpc("issue_prepared_session", {
-        p_document: doc.id,
-        p_owner: user.id,
-        p_email: email,
-        p_hash: await digest(token),
-        p_fields: fields,
-        p_path: preparedPath,
-        p_delivery: delivery,
-        p_recipient_name: body.recipientName.trim(),
+      const { error } = await db.rpc("issue_document_sessions", {
+        p_document: doc.id, p_owner: user.id, p_revision: doc.draft_revision,
+        p_source: doc.original_path, p_path: preparedPath, p_fields: fields,
+        p_signers: signers, p_sessions: sessions.map(({ token: _token, ...session }) => session), p_delivery: delivery,
         p_metadata: {
           source_path: doc.original_path,
           name: "Lichen Wang",
@@ -705,33 +689,20 @@ Deno.serve(async (request) => {
           409,
         );
       }
-      const link = `${appUrl.replace(/\/$/, "")}/#/sign/${token}`;
-      if (delivery === "share")
-        return json({
-          link,
-          expires_at: new Date(Date.now() + 72 * 3600000).toISOString(),
-        });
-      let sent = false;
-      let messageId = "";
+      const links = sessions.map(session => ({ name: session.name, email: session.email, link: `${appUrl.replace(/\/$/, "")}/#/sign/${session.token}` }));
+      if (delivery === "share") return json({ links, link: links.length === 1 ? links[0].link : undefined, expires_at: new Date(Date.now()+72*3600000).toISOString() });
       try {
-        messageId = await sendGmail(gmailToken, email, doc.title, link, sid);
-        sent = true;
-      } finally {
-        // A timed-out email may still arrive: revoke its token before allowing resend.
-        if (!sent) {
-          const { error } = await db.rpc("cancel_failed_invitation", {
-            p_session: sid,
-            p_document: doc.id,
-            p_owner: user.id,
-          });
-          if (error) console.error("Failed invitation needs operator review");
+        for (const session of sessions) {
+          const link = links.find(item => item.email === session.email)!.link;
+          const messageId = await sendGmail(gmailToken, session.email, doc.title, link, session.id);
+          await audit(doc.id, "email_accepted_by_provider", session.email, session.id, { provider: "gmail", message_id: messageId, sender: "readyreadymotors9999@gmail.com" });
         }
+      } catch (error) {
+        // Revoke the whole batch, including any invitations already accepted by Gmail.
+        const result = await db.rpc("cancel_failed_invitation", { p_document: doc.id, p_owner: user.id, p_session: sessions[0].id });
+        if (result.error) console.error("Failed invitation batch needs operator review");
+        throw error;
       }
-      await audit(doc.id, "email_accepted_by_provider", email, sid, {
-        provider: "gmail",
-        message_id: messageId,
-        sender: "readyreadymotors9999@gmail.com",
-      });
       return json({ sent: true });
     }
     fail("Unknown action.", 404);

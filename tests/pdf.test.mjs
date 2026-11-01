@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PDFDocument, degrees } from "pdf-lib";
+import { PDFDocument, degrees, PDFName, PDFDict } from "pdf-lib";
 import {
   generateSignedPdf,
   sha256,
@@ -219,4 +219,18 @@ test("recipient completion preserves the company signature and both certificates
   } finally {
     await task.destroy();
   }
+});
+
+test('three participants retain earlier signatures and certificates in the final PDF',async()=>{
+ const pdf=await PDFDocument.create();pdf.addPage([600,800]);
+ let bytes=await pdf.save();
+ for(const [index,person] of ['company','alice','bob'].entries()){
+  const canvas=createCanvas(900,240),ctx=canvas.getContext('2d');ctx.fillStyle=['#123d35','#204a80','#803d20'][index];ctx.fillRect(20,40,850,150);
+  bytes=await generateSignedPdf(bytes,new Uint8Array(canvas.toBuffer('image/png')),{id:'group-document',fields:[{page:1,type:'signature',signer:person,x:0.1,y:0.1+index*0.2,width:0.3,height:0.05}]},'session-'+person,person+'@example.com',person,'2026-11-01T00:00:00Z');
+  const current=await PDFDocument.load(bytes);
+  assert.equal(current.getPageCount(),index+2);
+ }
+ const final=await PDFDocument.load(bytes);
+ const images=final.getPage(0).node.Resources().lookup(PDFName.of("XObject"), PDFDict);
+ assert.equal(images.keys().length,3);
 });

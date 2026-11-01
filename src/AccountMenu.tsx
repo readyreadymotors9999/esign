@@ -27,7 +27,7 @@ export function AccountMenu({ onSignOut }: { onSignOut: () => Promise<void> }) {
   return (
     <div className="account-actions" ref={container}>
       <button ref={trigger} type="button" className="secondary account-trigger" aria-expanded={open} aria-controls="account-dropdown" onClick={() => setOpen(!open)}>
-        My Account <svg aria-hidden="true" width="12" height="8" viewBox="0 0 12 8" fill="none"><path d="m1 1 5 5 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        My Account <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
       {open && (
         <nav id="account-dropdown" className="account-dropdown" aria-label="Account options">

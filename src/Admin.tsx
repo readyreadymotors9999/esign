@@ -4,10 +4,12 @@ import {
   supabase,
   editDocumentPdf,
   type Document,
+  type DocumentSigner,
   type DocumentSummary,
   type Field,
 } from "./api";
 import { PdfPreview as Pdf, prefetchPdfPreview } from "./PdfPreview";
+import { signatureFieldKey } from "../supabase/functions/_shared/validation";
 import { DraftHistory } from "./draftHistory";
 import { DraftSaver } from "./draftSaver";
 import { Loading } from "./Loading";
@@ -22,7 +24,7 @@ type Recipient = {
   first_name: string;
   last_name: string;
 };
-type DraftSnapshot = { path: string; title: string; fields: Field[] };
+type DraftSnapshot = { path: string; title: string; fields: Field[]; signers: DocumentSigner[] };
 function documentStatus(document: DocumentSummary) {
   return document.status === "sent" && document.viewed_at ? "viewed" : document.status;
 }
@@ -67,6 +69,11 @@ export default function Admin({
     [editingAvailable, setEditingAvailable] = useState(false),
     [pageRangesAvailable, setPageRangesAvailable] = useState(false),
     [toolsHost, setToolsHost] = useState<HTMLDivElement | null>(null);
+  const [signersAvailable, setSignersAvailable] = useState(false);
+  const [documentSigners, setDocumentSigners] = useState<DocumentSigner[]>([]);
+  const [appliedSignatures, setAppliedSignatures] = useState<Set<string>>(new Set());
+  const [signatureTarget, setSignatureTarget] = useState<string>();
+  const [shareLinks, setShareLinks] = useState<{ name: string; email: string; link: string }[]>([]);
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [zoomHost, setZoomHost] = useState<HTMLDivElement | null>(null);
   const dividerDrag = useRef<{ x: number; width: number } | null>(null);
@@ -104,9 +111,9 @@ export default function Admin({
       return;
     }
     const document = selected;
-    const saver = new DraftSaver(fields, document.draft_revision || 0,
-      async (fields, revision) => {
-        const result = await api("save_draft", { documentId: document.id, expectedPath: document.original_path, fields, revision });
+    const saver = new DraftSaver({ fields, signers: documentSigners }, document.draft_revision || 0,
+      async (layout, revision) => {
+        const result = await api("save_draft", { documentId: document.id, expectedPath: document.original_path, ...layout, revision });
         return result.revision;
       },
       (status) => { if (draftSaver.current === saver) setSaveStatus(status); },
@@ -121,7 +128,7 @@ export default function Admin({
     setSaveStatus("Draft saved");
     return () => { void saver.flush().catch(() => {}); };
   }, [selected?.id, selected?.original_path, selected?.draft_revision, selected?.status, autosaveAvailable]);
-  useEffect(() => { draftSaver.current?.update(fields); }, [fields]);
+  useEffect(() => { draftSaver.current?.update({ fields, signers: documentSigners }); }, [fields, documentSigners]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (draftSaver.current?.dirty) { event.preventDefault(); event.returnValue = ""; }
@@ -134,11 +141,11 @@ export default function Admin({
   const skipHistory = useRef(false);
   const [, updateHistory] = useState(0);
   function currentSnapshot(): DraftSnapshot | undefined {
-    return selected ? { path: selected.original_path, title: selected.title, fields } : undefined;
+    return selected ? { path: selected.original_path, title: selected.title, fields, signers: documentSigners } : undefined;
   }
   useEffect(() => {
     if (selected?.status !== "draft") { history.current = undefined; return; }
-    const snapshot = { path: selected.original_path, title: selected.title, fields };
+    const snapshot = { path: selected.original_path, title: selected.title, fields, signers: documentSigners };
     if (history.current?.id !== selected.id) {
       history.current = { id: selected.id, entries: new DraftHistory(snapshot), contact: { email, first, last, recipientId, delivery } };
       updateHistory(value => value + 1);
@@ -150,7 +157,7 @@ export default function Admin({
       if (history.current?.entries.record(snapshot)) updateHistory(value => value + 1);
     }, 300);
     return () => clearTimeout(timer);
-  }, [selected?.id, selected?.status, selected?.original_path, selected?.title, fields]);
+  }, [selected?.id, selected?.status, selected?.original_path, selected?.title, fields, documentSigners]);
   async function restoreHistory(operation: "undo" | "redo" | "discard") {
     const session = history.current;
     const snapshot = currentSnapshot();
@@ -164,6 +171,7 @@ export default function Admin({
     skipHistory.current = true;
     await show(selected.id);
     if (operation === "discard") {
+      setSignature(""); setSignatureMethod("typed");
       setEmail(session.contact.email); setFirst(session.contact.first); setLast(session.contact.last);
       setRecipientId(session.contact.recipientId); setDelivery(session.contact.delivery);
     }
@@ -200,6 +208,7 @@ export default function Admin({
     detailRequest.current++;
     setSelected(undefined);
     setShare("");
+    setShareLinks([]);
     setSource(null);
     setMessage("");
     setRecipientEditor(false);
@@ -280,6 +289,7 @@ export default function Admin({
     try {
       const data = await api("detail", { documentId: id });
       if (request !== detailRequest.current) return false;
+      setSignersAvailable(data.capabilities?.documentSigners === true);
       setRestoreAvailable(data.capabilities?.draftRestore === true);
       setAutosaveAvailable(data.capabilities?.draftAutosave === true);
       setEditingAvailable(data.capabilities?.pdfEditing === true);
@@ -292,12 +302,17 @@ export default function Admin({
       }
       setRecipientEditor(false);
       setSelected(data.document);
-      setFields(data.document.fields);
+      setFields(data.document.fields.map((field: Field) => ({ ...field, id: field.id || crypto.randomUUID() })));
+      setDocumentSigners(data.document.signers || []);
+      setAppliedSignatures(new Set());
+      setSignatureTarget(undefined);
       setUrl(data.url || "");
       setAudit(data.audit);
       setRename(data.document.title);
-      setSignature("");
-      setSignatureMethod("typed");
+      if (selected?.id !== id || selected.status !== "draft" || data.document.status !== "draft") {
+        setSignature("");
+        setSignatureMethod("typed");
+      }
       setShowSignature(false);
       setDateApplied(false);
       setConsent(false);
@@ -327,6 +342,7 @@ export default function Admin({
     setFile(undefined);
     setAuthorize(undefined);
     setShare("");
+    setShareLinks([]);
     setMessage(
       "PDF uploaded. Place a signature and date field for each signer.",
     );
@@ -336,8 +352,10 @@ export default function Admin({
     const result = await api("send", {
       documentId: selected!.id,
       fields,
-      email,
-      recipientName: `${first} ${last}`.trim(),
+      appliedSignatureFields: [...appliedSignatures],
+      signers: documentSigners,
+      email: documentSigners[0]?.email,
+      recipientName: documentSigners[0]?.name,
       recipientId: recipientId || undefined,
       recipientFirstName: first,
       recipientLastName: last,
@@ -348,26 +366,27 @@ export default function Admin({
       delivery,
     });
     setShare(result.link || "");
+    setShareLinks(result.links || []);
     await refreshRecipients();
     await refresh();
     await show(selected!.id);
     setMessage(
       delivery === "share"
-        ? "Private signing link created. Copy it below; it expires in 72 hours."
-        : "Signing invitation sent to the recipient. It expires in 72 hours.",
+        ? "Private signing links created. Share each link only with its named signer; links expire in 72 hours."
+        : "Signing invitations sent to the document signers. Links expire in 72 hours.",
     );
   }
   const ready =
-    first.trim() &&
-    email &&
+    signersAvailable &&
+    documentSigners.length > 0 &&
     signature &&
     consent &&
     pdfReady &&
-    ["company", "recipient"].every((s) =>
+    ["company", ...documentSigners.map(signer => signer.id)].every((s) =>
       ["signature", "date"].every((t) =>
         fields.some((f) => f.signer === s && f.type === t),
       ),
-    );
+    ) && fields.filter(field => field.signer === "company" && field.type === "signature").every(field => appliedSignatures.has(signatureFieldKey(field)));
   return (
     <div className={`admin-workspace ${selected ? "document-open" : ""}`}>
       {autosaveToast && selected?.status === "draft" && (
@@ -383,6 +402,7 @@ export default function Admin({
           onClose={() => setShowSignature(false)}
           onAccept={(png, method) => {
             setSignature(png);
+            if (signatureTarget) setAppliedSignatures(current => new Set([...current, signatureTarget]));
             setSignatureMethod(method);
             setConsent(true);
             setDateApplied(true);
@@ -601,6 +621,7 @@ export default function Admin({
                   onClick={() =>
                     task(async () => {
                       setShare("");
+    setShareLinks([]);
                       if (await show(doc.id)) await refresh(true);
                     })
                   }
@@ -758,12 +779,15 @@ export default function Admin({
                         type="button"
                         className="recipient-save"
                         disabled={
-                          busy ||
+                          !signersAvailable || busy ||
                           !first.trim() ||
                           !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
                         }
                         onClick={() =>
                           task(async () => {
+                            const normalizedEmail = email.trim().toLowerCase();
+                            if (normalizedEmail === "readyreadymotors9999@gmail.com") throw new Error("Lichen Wang is already this document’s company signer.");
+                            if (documentSigners.length >= 10 && !documentSigners.some(signer => signer.email === normalizedEmail)) throw new Error("A document can contain up to 10 additional signers.");
                             const saved = await api("save_recipient", {
                               recipientId: recipientId || undefined,
                               email,
@@ -771,19 +795,33 @@ export default function Admin({
                               lastName: last,
                             });
                             setRecipientId(saved.recipient.id);
+                            const existing = documentSigners.find(signer => signer.email === normalizedEmail || signer.recipientId === saved.recipient.id);
+                            const signer = { id: existing?.id || (documentSigners.length === 0 ? "recipient" : crypto.randomUUID()), recipientId: saved.recipient.id, email: normalizedEmail, name: `${first} ${last}`.trim() };
+                            const nextSigners = existing ? documentSigners.map(value => value.id === existing.id ? signer : value) : [...documentSigners, signer];
+                            setDocumentSigners(nextSigners);
+                            draftSaver.current?.update({ fields, signers: nextSigners });
+                            await draftSaver.current?.flush();
                             await refreshRecipients();
                             setRecipientEditor(false);
                             setMessage(
-                              "Recipient saved to your private address book.",
+                              "Recipient saved and added as a signer for this document.",
                             );
                           })
                         }
                       >
-                        {recipientId ? "Update recipient" : "Save recipient"}
+                        {documentSigners.some(signer => signer.recipientId === recipientId) ? "Update document signer" : "Save and add as signer"}
                       </button>
+                      {documentSigners.some(signer => signer.email === email.trim().toLowerCase()) && (
+                        <button type="button" className="secondary danger-link" disabled={busy} onClick={() => {
+                          const signer = documentSigners.find(signer => signer.email === email.trim().toLowerCase());
+                          if (!signer || !window.confirm(`Remove ${signer.name} and their assigned fields from this document?`)) return;
+                          setFields(current => current.filter(field => field.signer !== signer.id));
+                          setDocumentSigners(current => current.filter(value => value.id !== signer.id));
+                          setRecipientEditor(false);
+                        }}>Remove signer from document</button>
+                      )}
                       <small className="block">
-                        New recipients are saved automatically when you send.
-                        You can edit a saved contact here and update it.
+                        Only people explicitly added here appear in this document’s signer list. Saved contacts are not added automatically.
                       </small>
                     </section>,
                     recipientHost,
@@ -797,6 +835,7 @@ export default function Admin({
                       if (ready) void task(send);
                     }}
                   >
+                    {!signersAvailable && <p className="notice">Deploy the document signer backend update before sending invitations.</p>}
                     <h3>Company signer</h3>
                     <div className="signer-profile">
                       <strong>Lichen Wang</strong>
@@ -812,7 +851,7 @@ export default function Admin({
                     </p>
                     {signature && (
                       <small className="signature-accepted">
-                        Signature accepted · {today}
+                        Signature style ready · {today}
                       </small>
                     )}
                     <label>
@@ -842,12 +881,11 @@ export default function Admin({
                       {busy
                         ? "Preparing…"
                         : delivery === "share"
-                          ? "Sign & create share link →"
-                          : "Sign & email recipient →"}
+                          ? (documentSigners.length > 1 ? "Sign & create share links →" : "Sign & create share link →")
+                          : (documentSigners.length > 1 ? "Sign & email signers →" : "Sign & email recipient →")}
                     </button>
                     <small className="block">
-                      Only the recipient is invited. Both signatures remain in
-                      the completed PDF.
+                      Only signers added to this document are invited. Everyone’s signatures remain in the completed PDF.
                     </small>
                   </form>
                 )}
@@ -914,20 +952,20 @@ export default function Admin({
                       url={url}
                       cacheKey={
                         selected.owner_id
-                          ? `${selected.owner_id}:${selected.id}:${selected.status}:${selected.signed_path || (selected.status === "sent" ? selected.prepared_path : null) || selected.original_path}`
+                          ? `${selected.owner_id}:${selected.id}:${selected.status}:${selected.signed_path || (selected.status === "sent" ? selected.working_path || selected.prepared_path : null) || selected.original_path}`
                           : undefined
                       }
                       fields={
                         selected.status === "completed"
                           ? []
                           : selected.status === "sent"
-                            ? fields.filter((f) => f.signer !== "company")
+                            ? fields.filter((f) => f.signer !== "company" && !selected.signed_signer_ids?.includes(f.signer || "recipient"))
                             : fields
                       }
                       place={
                         selected.status === "draft"
                           ? (field) => {
-                              if (!busy) setFields([...fields, field]);
+                              if (!busy) setFields([...fields, { ...field, id: crypto.randomUUID() }]);
                             }
                           : undefined
                       }
@@ -944,9 +982,14 @@ export default function Admin({
                           ? (_, field) => {
                               if (busy) return;
                               if (field.signer === "company") {
-                                if (field.type === "signature")
-                                  setShowSignature(true);
-                                else setDateApplied(true);
+                                if (field.type === "signature") {
+                                  const key = signatureFieldKey(field);
+                                  if (appliedSignatures.has(key)) return;
+                                  if (signature) {
+                                    setAppliedSignatures(current => new Set([...current, key]));
+                                    setConsent(true); setDateApplied(true);
+                                  } else { setSignatureTarget(key); setShowSignature(true); }
+                                } else setDateApplied(true);
                               }
                             }
                           : undefined
@@ -954,12 +997,14 @@ export default function Admin({
                       updateField={
                         selected.status === "draft"
                           ? (i, patch) => {
-                              if (!busy)
+                              if (!busy) {
+                                if (patch.signer && patch.signer !== fields[i].signer) setAppliedSignatures(current => { const next = new Set(current); next.delete(signatureFieldKey(fields[i])); return next; });
                                 setFields(
                                   fields.map((f, j) =>
                                     i === j ? { ...f, ...patch } : f,
                                   ),
                                 );
+                              }
                             }
                           : undefined
                       }
@@ -978,6 +1023,7 @@ export default function Admin({
                                 ...fields,
                                 {
                                   ...field,
+                                  id: crypto.randomUUID(),
                                   x: Math.min(1 - field.width, field.x + 0.025),
                                   y: Math.min(
                                     1 - field.height,
@@ -992,42 +1038,18 @@ export default function Admin({
                       datePreviews={{
                         company: dateApplied ? today : undefined,
                       }}
-                      signerNames={{
-                        company: "Lichen Wang",
-                        recipient:
-                          first.trim() && email
-                            ? `${first} ${last}`.trim()
-                            : undefined,
-                      }}
+                      appliedSignatureFields={appliedSignatures}
+                      editableSigners={["company"]}
+                      onChangeSignature={(_, field) => { setSignatureTarget(signatureFieldKey(field)); setShowSignature(true); }}
+                      signerNames={Object.fromEntries([["company", "Lichen Wang"], ...documentSigners.map(signer => [signer.id, signer.name])])}
                       onRecipientHost={setRecipientHost}
-                      recipientEmail={email}
-                      recipientChoices={recipients
-                        .filter(
-                          (r) =>
-                            r.email.trim().toLowerCase() !==
-                            email.trim().toLowerCase(),
-                        )
-                        .map((r) => ({
-                          id: r.id,
-                          name: `${r.first_name} ${r.last_name}`.trim(),
-                          email: r.email,
-                        }))}
                       onChooseRecipient={(id) => {
-                        const r = recipients.find((r) => r.id === id);
-                        if (r) {
-                          setRecipientId(r.id);
-                          setEmail(r.email);
-                          setFirst(r.first_name);
-                          setLast(r.last_name);
-                          setRecipientEditor(false);
-                          return;
-                        }
-                        if (id !== "edit") {
-                          setRecipientId("");
-                          setEmail("");
-                          setFirst("");
-                          setLast("");
-                        }
+                        const signer = documentSigners.find(signer => signer.id === id);
+                        if (signer) {
+                          const contact = recipients.find(contact => contact.email === signer.email);
+                          setRecipientId(contact?.id || signer.recipientId || ""); setEmail(signer.email);
+                          setFirst(contact?.first_name || signer.name.split(" ")[0]); setLast(contact?.last_name || signer.name.split(" ").slice(1).join(" "));
+                        } else { setRecipientId(""); setEmail(""); setFirst(""); setLast(""); }
                         setRecipientEditor(true);
                       }}
                       zoomHost={zoomHost}
@@ -1060,6 +1082,7 @@ export default function Admin({
                       onReady={setPdfReady}
                     />
                   )}
+                  {shareLinks.length > 1 && <div className="share-panel"><h3>Private signing links</h3>{shareLinks.map(item => <label key={item.email}>{item.name} · {item.email}<input aria-label={`Signing link for ${item.email}`} readOnly value={item.link} onFocus={event => event.target.select()} /></label>)}</div>}
                   {share && (
                     <div className="share-panel">
                       <h3>Private signing link</h3>
@@ -1108,6 +1131,7 @@ export default function Admin({
                             return;
                           await api("revoke", { documentId: selected.id });
                           setShare("");
+    setShareLinks([]);
                           await show(selected.id);
                           await refresh();
                           setMessage(

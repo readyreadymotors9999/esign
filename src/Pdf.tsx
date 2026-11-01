@@ -4,6 +4,7 @@ import { parsePageRange } from "../supabase/functions/_shared/page-range.ts";
 import * as pdfjs from "pdfjs-dist";
 import worker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { Field } from "./api";
+import { signatureFieldKey } from "../supabase/functions/_shared/validation";
 import { Loading } from "./Loading";
 import {
   pdfMemoryGeneration,
@@ -48,16 +49,18 @@ export function Pdf({
   datePreviews = {},
   signerNames = {},
   onChooseRecipient,
-  recipientChoices = [],
-  recipientEmail,
   onRecipientHost,
   zoomHost,
+  appliedSignatureFields,
+  onChangeSignature,
+  editableSigners = [],
 }: {
+  appliedSignatureFields?: Set<string>;
+  onChangeSignature?: (index: number, field: Field) => void;
+  editableSigners?: string[];
   onRecipientHost?: (host: HTMLDivElement | null) => void;
-  recipientEmail?: string;
   zoomHost?: HTMLElement | null;
   onChooseRecipient?: (id?: string) => void;
-  recipientChoices?: { id: string; name: string; email: string }[];
   cacheKey?: string;
   url: string;
   fields: Field[];
@@ -77,9 +80,9 @@ export function Pdf({
   onFieldActivate?: (index: number, field: Field) => void;
   updateField?: (index: number, patch: Partial<Field>) => void;
   duplicateField?: (index: number) => void;
-  signaturePreviews?: Partial<Record<"company" | "recipient", string>>;
-  datePreviews?: Partial<Record<"company" | "recipient", string>>;
-  signerNames?: Partial<Record<"company" | "recipient", string>>;
+  signaturePreviews?: Partial<Record<string, string>>;
+  datePreviews?: Partial<Record<string, string>>;
+  signerNames?: Partial<Record<string, string>>;
 }) {
   const viewer = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -161,7 +164,10 @@ export function Pdf({
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy>();
   const [allPagesReady, setAllPagesReady] = useState(false);
   const [error, setError] = useState("");
-  const [signer, setSigner] = useState<"company" | "recipient">("company");
+  const [signer, setSigner] = useState<string>("company");
+  useEffect(() => {
+    if (signer !== "company" && !signerNames[signer]) setSigner("company");
+  }, [signer, signerNames[signer]]);
   const [addingField, setAddingField] = useState(false);
   const placementArmed = useRef(false);
   function cancelPlacement() {
@@ -256,39 +262,26 @@ export function Pdf({
               onChooseRecipient?.();
               return;
             }
-            if (e.target.value.startsWith("contact:")) {
-              onChooseRecipient?.(e.target.value.slice(8));
-              setSigner("recipient");
-              return;
-            }
-            setSigner(e.target.value as "company" | "recipient");
+            setSigner(e.target.value);
           }}
         >
           <option value="company">Lichen Wang</option>
-          {signerNames.recipient && (
-            <option value="recipient">
-              {signerNames.recipient}
-              {recipientEmail ? ` · ${recipientEmail}` : ""}
-            </option>
-          )}
-          {recipientChoices.map((r) => (
-            <option key={r.id} value={`contact:${r.id}`}>
-              {r.name} · {r.email}
-            </option>
+          {Object.entries(signerNames).filter(([id, name]) => id !== "company" && name).map(([id, name]) => (
+            <option key={id} value={id}>{name}</option>
           ))}
-          <option value="manage">Add new recipient…</option>
+          <option value="manage">Add signer…</option>
         </select>
       </label>
-      {signer === "recipient" && signerNames.recipient && (
+      {signer !== "company" && signerNames[signer] && (
         <button
           type="button"
           className="secondary edit-selected-recipient"
           onClick={() => {
             cancelPlacement();
-            onChooseRecipient?.("edit");
+            onChooseRecipient?.(signer);
           }}
         >
-          Edit recipient
+          Edit signer
         </button>
       )}
       <div className="signer-recipient-editor" ref={onRecipientHost} />
@@ -305,7 +298,7 @@ export function Pdf({
               cancelPlacement();
               return;
             }
-            if (signer === "recipient" && !signerNames.recipient) {
+            if (signer !== "company" && !signerNames[signer]) {
               cancelPlacement();
               onChooseRecipient?.();
               return;
@@ -527,7 +520,7 @@ export function Pdf({
                   ? (f) => {
                       if (!placementArmed.current) return;
                       cancelPlacement();
-                      if (signer === "recipient" && !signerNames.recipient) {
+                      if (signer !== "company" && !signerNames[signer]) {
                         onChooseRecipient?.();
                         return;
                       }
@@ -569,6 +562,9 @@ export function Pdf({
                     }
                   : undefined
               }
+              appliedSignatureFields={appliedSignatureFields}
+              onChangeSignature={onChangeSignature}
+              editableSigners={editableSigners}
               signaturePreviews={signaturePreviews}
               datePreviews={datePreviews}
               signerNames={signerNames}
@@ -597,13 +593,16 @@ function Page({
   updateField,
   duplicateField,
   onDelete,
+  appliedSignatureFields,
+  onChangeSignature,
+  editableSigners,
   signaturePreviews,
   datePreviews,
   signerNames,
 }: {
   pdf: pdfjs.PDFDocumentProxy;
   cacheKey?: string;
-  placementSigner: "company" | "recipient";
+  placementSigner: string;
   zoom: number;
   page: number;
   fields: Field[];
@@ -619,9 +618,12 @@ function Page({
   updateField?: (index: number, patch: Partial<Field>) => void;
   duplicateField?: (index: number) => void;
   onDelete?: (index: number) => void;
-  signaturePreviews: Partial<Record<"company" | "recipient", string>>;
-  datePreviews: Partial<Record<"company" | "recipient", string>>;
-  signerNames: Partial<Record<"company" | "recipient", string>>;
+  appliedSignatureFields?: Set<string>;
+  onChangeSignature?: (index: number, field: Field) => void;
+  editableSigners: string[];
+  signaturePreviews: Partial<Record<string, string>>;
+  datePreviews: Partial<Record<string, string>>;
+  signerNames: Partial<Record<string, string>>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -831,7 +833,7 @@ function Page({
         <div
           aria-hidden="true"
           data-testid="field-placement-preview"
-          className={`field-placement-preview ${type} ${placementSigner}`}
+          className={`field-placement-preview ${type} ${placementSigner === "company" ? "company" : "recipient"}`}
           style={{
             left: `${hover.x * 100}%`,
             top: `${hover.y * 100}%`,
@@ -848,12 +850,12 @@ function Page({
           const owner = f.signer || "recipient",
             preview =
               f.type === "signature"
-                ? signaturePreviews[owner]
+                ? (!appliedSignatureFields || appliedSignatureFields.has(signatureFieldKey(f)) ? signaturePreviews[owner] : undefined)
                 : datePreviews[owner];
           return (
             <div
               key={i}
-              className={`field ${f.type} ${owner} ${activeField === i ? "selected-field" : ""} ${preview ? "filled-field" : ""}`}
+              className={`field ${f.type} ${owner === "company" ? "company" : "recipient"} ${activeField === i ? "selected-field" : ""} ${preview ? "filled-field" : ""}`}
               style={{
                 left: `${f.x * 100}%`,
                 top: `${f.y * 100}%`,
@@ -867,7 +869,7 @@ function Page({
               <button
                 type="button"
                 className="field-content"
-                aria-label={`Open ${owner} ${f.type} field ${i + 1} on page ${page}`}
+                aria-label={`Open ${owner === "company" || owner === "recipient" ? owner : signerNames[owner] || "signer"} ${f.type} field ${i + 1} on page ${page}`}
                 onPointerDown={(e) => {
                   if (!updateField || e.button !== 0) return;
                   e.stopPropagation();
@@ -936,25 +938,25 @@ function Page({
                   </span>
                 )}
               </button>
-              {updateField && activeField === i && (
+              {(updateField || (onChangeSignature && editableSigners.includes(owner))) && activeField === i && (
                 <div
                   className={`field-controls ${f.y < 0.1 ? "below" : ""} ${f.x > 0.3 ? "align-right" : ""}`}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <select
+                  {updateField && <select
                     aria-label={`Signer for field ${i + 1}`}
                     value={owner}
                     onChange={(e) =>
                       updateField(i, {
-                        signer: e.target.value as "company" | "recipient",
+                        signer: e.target.value,
                       })
                     }
                   >
                     <option value="company">Lichen Wang</option>
-                    {signerNames.recipient && (
-                      <option value="recipient">{signerNames.recipient}</option>
-                    )}
-                  </select>
+                    {Object.entries(signerNames).filter(([id, name]) => id !== "company" && name).map(([id, name]) => (
+                      <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>}
                   <button
                     type="button"
                     className="field-settings"
@@ -966,7 +968,10 @@ function Page({
                   </button>
                   {menuField === i && (
                     <div className="field-menu" role="menu">
-                      <button
+                      {f.type === "signature" && editableSigners.includes(owner) && onChangeSignature && (
+                        <button type="button" role="menuitem" onClick={() => { onMenu(i); onChangeSignature(i, f); }}>Change signature style</button>
+                      )}
+                      {duplicateField && <button
                         type="button"
                         role="menuitem"
                         onClick={() => {
@@ -975,15 +980,15 @@ function Page({
                         }}
                       >
                         Duplicate
-                      </button>
-                      <button
+                      </button>}
+                      {onDelete && <button
                         type="button"
                         role="menuitem"
                         className="danger-link"
                         onClick={() => onDelete?.(i)}
                       >
                         Delete
-                      </button>
+                      </button>}
                     </div>
                   )}
                 </div>

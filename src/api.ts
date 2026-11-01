@@ -13,9 +13,14 @@ export type Field = {
   width: number;
   height: number;
   type: "signature" | "date";
-  signer?: "company" | "recipient";
+  signer?: string;
+  id?: string;
 };
+export type DocumentSigner = { id: string; name: string; email: string; recipientId?: string };
 export type Document = {
+  signers?: DocumentSigner[];
+  working_path?: string | null;
+  signed_signer_ids?: string[];
   id: string;
   title: string;
   status: string;
