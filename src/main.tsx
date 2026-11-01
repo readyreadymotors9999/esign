@@ -11,6 +11,7 @@ import {
 import { clearPdfMemory } from "./pdfMemory";
 import AccountSettings from "./AccountSettings";
 import { AccountMenu } from "./AccountMenu";
+import { Loading } from "./Loading";
 import { PdfPreview as Pdf } from "./PdfPreview";
 import { type SignatureMethod } from "./Signature";
 import { SignatureDialog } from "./SignatureDialog";
@@ -19,6 +20,8 @@ import { signatureFieldKey } from "../supabase/functions/_shared/validation";
 import "./style.css";
 function App() {
   const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [hash, setHash] = useState(location.hash);
   const [homeVersion, setHomeVersion] = useState(0);
   const [documentCache, setDocumentCache] = useState<{
@@ -26,7 +29,12 @@ function App() {
     documents: DocumentSummary[];
   } | null>(null);
   useEffect(() => {
+    let active = true;
+    let authEvents = 0;
     const applySession = (value: Session | null) => {
+      if (!active) return;
+      setAuthError("");
+      setAuthReady(true);
       setSession(value);
       if (!value) {
         clearDocumentCache();
@@ -41,13 +49,27 @@ function App() {
         return documents ? { owner: value.user.id, documents } : null;
       });
     };
-    supabase.auth.getSession().then(({ data }) => applySession(data.session));
-    const { data } = supabase.auth.onAuthStateChange((_, value) =>
-      applySession(value),
-    );
+    const failed = () => {
+      if (!active || authEvents > 0) return;
+      setAuthError("Unable to restore your session. Please reload and try again.");
+      setAuthReady(true);
+    };
+    supabase.auth.getSession().then(({ data, error }) => {
+      // An auth event (including sign-out) is newer than this startup read.
+      if (!active || authEvents > 0) return;
+      if (error) failed();
+      else applySession(data.session);
+    }).catch(failed);
+    const { data } = supabase.auth.onAuthStateChange((event, value) => {
+      // getSession handles startup errors; INITIAL_SESSION can emit null on failure.
+      if (event === "INITIAL_SESSION") return;
+      authEvents++;
+      applySession(value);
+    });
     const fn = () => setHash(location.hash);
     window.addEventListener("hashchange", fn);
     return () => {
+      active = false;
       data.subscription.unsubscribe();
       window.removeEventListener("hashchange", fn);
     };
@@ -103,6 +125,13 @@ function App() {
           <Completion />
         ) : token ? (
           <Signer key={token} token={token} />
+        ) : !authReady ? (
+          <Loading>Restoring your session…</Loading>
+        ) : authError ? (
+          <div className="card">
+            <p role="alert">{authError}</p>
+            <button type="button" onClick={() => location.reload()}>Reload</button>
+          </div>
         ) : session ? (
           hash === "#/settings" ? (
             <AccountSettings key={session.user.id} />

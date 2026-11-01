@@ -457,3 +457,7 @@ Acceptance: add two selected contacts while leaving a third unselected; confirm 
 
 
 The signer selector now exposes **Choose from recipients…** and **Add new signer…** as separate entries. The signer editor also has explicit source buttons for switching between saved contacts and a new recipient. Field settings menus fit the longest action label and clamp to viewport edges. Manual Save draft and successful Discard all changes display centered translucent confirmations (**Document saved** / **All changes discarded**) for 1.6 seconds, sharing the existing non-blocking autosave feedback. This update is frontend-only and requires no new Supabase migration or function deployment.
+
+Authentication startup now waits for Supabase session restoration before choosing the login or account view. Refreshing with a valid/refreshable persisted session no longer briefly renders the login form. Startup errors show a reload option; genuine signed-out sessions still show login. Public signing and completion routes do not wait for account restoration. This is frontend-only.
+
+When the Edge Function does not advertise `documentSigners`, the add-signer button now explains the required backend update directly beside the disabled control. An unchanged saved recipient uses **Add as signer** without rewriting the address-book record; edited/new contact details still use the contact-save flow before adding the document signer.

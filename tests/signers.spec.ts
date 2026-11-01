@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 
 test("document signer roster excludes unselected contacts and signatures apply one box at a time", async ({page}) => {
+  let documentSignersReady = false;
   const contacts = [
     {id:"alice",first_name:"Alice",last_name:"Chen",email:"alice@example.com"},
     {id:"bob",first_name:"Bob",last_name:"Wu",email:"bob@example.com"},
@@ -20,7 +21,7 @@ test("document signer roster excludes unselected contacts and signatures apply o
     if(route.request().url().includes("/rest/v1/documents")) return route.fulfill({json:[doc]});
     const body=route.request().postDataJSON();
     if(body.action==="recipients")return route.fulfill({json:{recipients:contacts}});
-    if(body.action==="detail")return route.fulfill({json:{document:doc,audit:[],url:"/signers.pdf",capabilities:{draftAutosave:true,draftRestore:true,documentSigners:true}}});
+    if(body.action==="detail")return route.fulfill({json:{document:doc,audit:[],url:"/signers.pdf",capabilities:{draftAutosave:true,draftRestore:true,documentSigners:documentSignersReady}}});
     if(body.action==="save_recipient") {
       let contact=contacts.find(contact=>contact.id===body.recipientId);
       if(!contact){ contact={id:"dave",first_name:body.firstName,last_name:body.lastName,email:body.email};contacts.push(contact); }
@@ -38,6 +39,13 @@ test("document signer roster excludes unselected contacts and signatures apply o
   await expect(signer).toHaveValue("company");
   await expect(signer.locator("option")).toHaveCount(3);
   await expect(signer).not.toContainText("Alice");await expect(signer).not.toContainText("Carol");
+  await signer.selectOption("manage");
+  await page.getByLabel("Saved recipient").selectOption("alice");
+  await expect(page.getByRole("button",{name:"Add as signer",exact:true})).toBeDisabled();
+  await expect(page.getByText("Adding document signers is not enabled on the server yet.",{exact:false})).toBeVisible();
+  documentSignersReady = true;
+  await page.reload();
+  await page.getByRole("button",{name:/PDF Selected signers/}).click();
   const first=page.getByRole("button",{name:"Open company signature field 1 on page 1",exact:true});
   await first.click();
   await page.getByRole("dialog").getByRole("button",{name:"Add signature",exact:true}).click();
@@ -55,7 +63,7 @@ test("document signer roster excludes unselected contacts and signatures apply o
     await signer.selectOption("manage");
     await page.getByLabel("Saved recipient").selectOption(contact.id);
     await expect(signer).not.toContainText(contact.first_name);
-    await page.getByRole("button",{name:"Save and add as signer",exact:true}).click();
+    await page.getByRole("button",{name:"Add as signer",exact:true}).click();
     await expect(signer).toContainText(contact.first_name);
   }
   await expect(signer.locator("option")).toHaveCount(5);

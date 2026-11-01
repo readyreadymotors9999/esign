@@ -788,6 +788,7 @@ export default function Admin({
                       <button
                         type="button"
                         className="recipient-save"
+                        aria-describedby={!signersAvailable ? "signer-setup-required" : undefined}
                         disabled={
                           !signersAvailable || busy ||
                           !first.trim() ||
@@ -798,7 +799,9 @@ export default function Admin({
                             const normalizedEmail = email.trim().toLowerCase();
                             if (normalizedEmail === "readyreadymotors9999@gmail.com") throw new Error("Lichen Wang is already this document’s company signer.");
                             if (documentSigners.length >= 10 && !documentSigners.some(signer => signer.email === normalizedEmail)) throw new Error("A document can contain up to 10 additional signers.");
-                            const saved = await api("save_recipient", {
+                            const contact = recipients.find(value => value.id === recipientId);
+                            const unchangedContact = contact && contact.email.trim().toLowerCase() === normalizedEmail && contact.first_name === first.trim() && contact.last_name === last.trim();
+                            const saved = unchangedContact ? { recipient: contact } : await api("save_recipient", {
                               recipientId: recipientId || undefined,
                               email,
                               firstName: first,
@@ -819,8 +822,9 @@ export default function Admin({
                           })
                         }
                       >
-                        {documentSigners.some(signer => signer.recipientId === recipientId) ? "Update document signer" : "Save and add as signer"}
+                        {busy ? "Saving…" : documentSigners.some(signer => signer.recipientId === recipientId) ? "Update document signer" : recipientId ? "Add as signer" : "Save and add as signer"}
                       </button>
+                      {!signersAvailable && <p id="signer-setup-required" className="notice">Adding document signers is not enabled on the server yet. Deploy the latest Supabase update, then refresh this document.</p>}
                       {documentSigners.some(signer => signer.email === email.trim().toLowerCase()) && (
                         <button type="button" className="secondary danger-link" disabled={busy} onClick={() => {
                           const signer = documentSigners.find(signer => signer.email === email.trim().toLowerCase());

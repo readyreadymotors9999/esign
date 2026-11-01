@@ -144,7 +144,7 @@ test("logo always returns home and account settings manage saved recipients", as
     await expect(page.getByLabel("Field signer").locator("option")).toHaveCount(3);
     await page.getByLabel("Field signer").selectOption("manage");
     await page.getByLabel("Saved recipient").selectOption(selectedId);
-    await page.getByRole("button", { name: "Save and add as signer", exact: true }).click();
+    await page.getByRole("button", { name: "Add as signer", exact: true }).click();
     await page.getByLabel("Field signer").selectOption("recipient");
     await expect(page.getByLabel("Field signer")).toHaveValue("recipient");
     await expect(
