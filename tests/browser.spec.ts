@@ -232,8 +232,9 @@ test.describe("High density PDF preview", () => {
       await page
         .getByRole("button", { name: "Signature", exact: true })
         .click();
+      await expect(page.locator(".placement-prompt")).toHaveCount(0);
       await page
-        .getByRole("button", { name: "Cancel placement", exact: true })
+        .getByRole("button", { name: "Signature", exact: true })
         .click();
       await page
         .locator(".pdf-page")
@@ -253,14 +254,17 @@ test.describe("High density PDF preview", () => {
         .getByRole("button", { name: "Signature", exact: true })
         .click();
       const target = (await page.locator(".pdf-page").first().boundingBox())!;
-      await page.mouse.move(target.x + 80, target.y + 140);
+      await page.mouse.move(target.x + 180, target.y + 140);
       const ghost = page.getByTestId("field-placement-preview");
       await expect(ghost).toHaveText("Signature");
       const ghostBox = (await ghost.boundingBox())!;
+      expect(Math.abs(ghostBox.x + ghostBox.width / 2 - target.x - 180)).toBeLessThanOrEqual(1);
+      expect(Math.abs(ghostBox.y + ghostBox.height / 2 - target.y - 140)).toBeLessThanOrEqual(1);
+      await expect(page.locator(".pdf-page").first()).toHaveCSS("cursor", "grab");
       await page
         .locator(".pdf-page")
         .nth(0)
-        .click({ position: { x: 80, y: 140 } });
+        .click({ position: { x: 180, y: 140 } });
       const placed = (await page.locator(".field").first().boundingBox())!;
       for (const key of ["x", "y", "width", "height"] as const)
         expect(Math.abs(placed[key] - ghostBox[key])).toBeLessThanOrEqual(1);
@@ -281,7 +285,15 @@ test.describe("High density PDF preview", () => {
         page.getByRole("button", { name: "Date", exact: true }),
       ).toHaveAttribute("aria-pressed", "false");
 
+      await expect(page.locator(".pdf-page").first()).not.toHaveCSS("cursor", "grab");
       await page.getByRole("button", { name: "Date", exact: true }).click();
+      await page.mouse.move(placed.x + placed.width / 2, placed.y + placed.height + 80);
+      await expect(page.getByTestId("alignment-guide-x").first()).toBeVisible();
+      await page.mouse.move(placed.x + placed.width + 80, placed.y + placed.height / 2);
+      await expect(page.getByTestId("alignment-guide-y").first()).toBeVisible();
+      await page.mouse.move(target.x + target.width * 0.8, target.y + target.height * 0.8);
+      await expect(page.locator(".field-alignment-guide")).toHaveCount(0);
+
 
       await page
         .locator(".pdf-page")
@@ -310,7 +322,7 @@ test.describe("High density PDF preview", () => {
       await page
         .locator(".pdf-page")
         .nth(1)
-        .click({ position: { x: 80, y: 140 } });
+        .click({ position: { x: 180, y: 140 } });
       await page.getByRole("button", { name: "Date", exact: true }).click();
 
       await page

@@ -318,14 +318,6 @@ export function Pdf({
           {fieldType === "signature" ? "Signature" : "Date"}
         </button>
       ))}
-      {addingField && (
-        <div className="placement-prompt" role="status">
-          Click the PDF to place one {type} field.
-          <button type="button" className="secondary" onClick={cancelPlacement}>
-            Cancel placement
-          </button>
-        </div>
-      )}
       {onEdit && pdf && (
         <div className="page-tools">
           <h3>Edit PDF</h3>
@@ -684,9 +676,26 @@ function Page({
       type,
       width,
       height,
-      x: Math.max(0, Math.min(1 - width, (clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1 - height, (clientY - rect.top) / rect.height)),
+      x: Math.max(0, Math.min(1 - width, (clientX - rect.left) / rect.width - width / 2)),
+      y: Math.max(0, Math.min(1 - height, (clientY - rect.top) / rect.height - height / 2)),
     };
+  }
+
+  const alignmentGuides = { x: new Set<number>(), y: new Set<number>() };
+  if (place && hover && container.current) {
+    const rect = container.current.getBoundingClientRect();
+    for (const field of fields.filter((field) => field.page === page)) {
+      for (const axis of ["x", "y"] as const) {
+        const size = axis === "x" ? "width" : "height";
+        const pixels = axis === "x" ? rect.width : rect.height;
+        for (const anchor of [0, 0.5, 1]) {
+          const coordinate = field[axis] + field[size] * anchor;
+          if ([0, 0.5, 1].some((edge) =>
+            Math.abs(hover[axis] + hover[size] * edge - coordinate) * pixels <= 6,
+          )) alignmentGuides[axis].add(coordinate);
+        }
+      }
+    }
   }
 
   const [ratio, setRatio] = useState(1.294);
@@ -803,6 +812,17 @@ function Page({
           <span className="loading-spinner" />
           Rendering page {page}…
         </div>
+      )}
+      {(["x", "y"] as const).flatMap((axis) =>
+        [...alignmentGuides[axis]].map((coordinate) => (
+          <div
+            key={`${axis}-${coordinate}`}
+            aria-hidden="true"
+            data-testid={`alignment-guide-${axis}`}
+            className={`field-alignment-guide ${axis}`}
+            style={axis === "x" ? { left: `${coordinate * 100}%` } : { top: `${coordinate * 100}%` }}
+          />
+        )),
       )}
       {place && hover && hover.type === type && (
         <div

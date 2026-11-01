@@ -1445,18 +1445,23 @@ body:has(.document-open) footer {
   }
 }
 .pdf-page.placing-field {
-  cursor: default;
+  cursor: grab;
 }
-.placement-prompt {
-  color: #166b51;
-  font-size: 12px;
-  padding: 8px;
-  background: #e8f4ee;
-  border-radius: 6px;
+.field-alignment-guide {
+  position: absolute;
+  pointer-events: none;
+  z-index: 11;
+  background: #187e6966;
 }
-.placement-prompt button {
-  margin-top: 6px;
-  display: block;
+.field-alignment-guide.x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+.field-alignment-guide.y {
+  left: 0;
+  right: 0;
+  height: 1px;
 }
 .field-placement-preview {
   position: absolute;
