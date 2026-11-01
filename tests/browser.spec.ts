@@ -60,6 +60,8 @@ test.describe("High density PDF preview", () => {
         status: "draft",
         fields: [],
         created_at: new Date().toISOString(),
+        original_path: "original.pdf",
+        draft_revision: 0,
       };
       await page.addInitScript(
         (email) =>
@@ -120,9 +122,16 @@ test.describe("High density PDF preview", () => {
           uploaded = true;
           return r.fulfill({ json: { ok: true } });
         }
+        if (b.action === "save_draft") {
+          expect(b.revision).toBe(doc.draft_revision);
+          doc.fields = b.fields;
+          doc.draft_revision++;
+          return r.fulfill({ json: { revision: doc.draft_revision } });
+        }
         if (b.action === "detail")
           return r.fulfill({
             json: {
+              capabilities: { draftAutosave: true },
               document: doc,
               url: "/fixture.pdf",
               audit: sent
@@ -253,7 +262,7 @@ test.describe("High density PDF preview", () => {
       await page
         .getByRole("button", { name: "Signature", exact: true })
         .click();
-      const target = (await page.locator(".pdf-page").first().boundingBox())!;
+      let target = (await page.locator(".pdf-page").first().boundingBox())!;
       await page.mouse.move(target.x + 180, target.y + 140);
       const ghost = page.getByTestId("field-placement-preview");
       await expect(ghost).toHaveText("Signature");
@@ -265,10 +274,18 @@ test.describe("High density PDF preview", () => {
         .locator(".pdf-page")
         .nth(0)
         .click({ position: { x: 180, y: 140 } });
-      const placed = (await page.locator(".field").first().boundingBox())!;
+      let placed = (await page.locator(".field").first().boundingBox())!;
       for (const key of ["x", "y", "width", "height"] as const)
         expect(Math.abs(placed[key] - ghostBox[key])).toBeLessThanOrEqual(1);
       await expect(page.getByTestId("field-placement-preview")).toHaveCount(0);
+      await expect(page.getByText("Draft saved", { exact: true })).toBeVisible();
+      expect(doc.fields).toHaveLength(1);
+      await page.reload();
+      await page.getByRole("button", { name: /PDF Custom agreement.pdf/ }).click();
+      await expect(page.locator(".field")).toHaveCount(1);
+      await expect(page.getByText("Draft saved", { exact: true })).toBeVisible();
+      target = (await page.locator(".pdf-page").first().boundingBox())!;
+      placed = (await page.locator(".field").first().boundingBox())!;
 
       await expect(
         page.getByRole("button", { name: "Cancel placement", exact: true }),
@@ -575,7 +592,7 @@ for (const method of ["drawn", "typed"])
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const bytes = await fixture();
-    let completed = false;
+    let completed = false, viewed = 0;
     await page.route("**/fixture.pdf", (r) =>
       r.fulfill({ contentType: "application/pdf", body: bytes }),
     );
@@ -600,6 +617,11 @@ for (const method of ["drawn", "typed"])
                 url: "/fixture.pdf",
               },
             });
+      if (b.action === "viewed") {
+        expect(await page.locator(".pdf-page-loading").count()).toBe(0);
+        viewed++;
+        return r.fulfill({ json: { ok: true } });
+      }
       if (b.action === "complete") {
         expect(b.consent).toBe(true);
         expect(b.signatureMethod).toBe(method);
@@ -616,6 +638,7 @@ for (const method of ["drawn", "typed"])
       page.getByRole("heading", { name: "Vehicle purchase agreement" }),
     ).toBeVisible();
     await expect(page.locator(".pdf-page")).toHaveCount(2);
+    await expect.poll(() => viewed).toBe(1);
     await expect(page.getByRole("alert")).toHaveCount(0);
     await expect(page.getByLabel("Full legal name")).toHaveValue(
       "Test Recipient",

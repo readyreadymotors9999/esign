@@ -22,6 +22,8 @@ export type Document = {
   created_at: string;
   fields: Field[];
   recipient_name?: string;
+  viewed_at?: string | null;
+  draft_revision?: number;
   original_path: string;
   owner_id?: string;
   prepared_path?: string | null;
@@ -29,7 +31,7 @@ export type Document = {
 };
 export type DocumentSummary = Pick<
   Document,
-  "id" | "title" | "status" | "created_at"
+  "id" | "title" | "status" | "created_at" | "viewed_at"
 >;
 export async function api<T = any>(
   action: string,
@@ -44,9 +46,14 @@ export async function api<T = any>(
     if (!session) throw new Error("Sign in to continue.");
     const { data, error } = await supabase
       .from("documents")
-      .select("id,title,status,created_at")
+      .select("id,title,status,created_at,viewed_at")
       .eq("owner_id", session.user.id)
       .order("created_at", { ascending: false });
+    if (error && (error.code === "42703" || error.code === "PGRST204")) {
+      const fallback = await supabase.from("documents").select("id,title,status,created_at").eq("owner_id", session.user.id).order("created_at", { ascending: false });
+      if (fallback.error) throw fallback.error;
+      return { documents: fallback.data } as T;
+    }
     if (error) throw error;
     return { documents: data } as T;
   }

@@ -8,6 +8,7 @@ import {
   type Field,
 } from "./api";
 import { PdfPreview as Pdf, prefetchPdfPreview } from "./PdfPreview";
+import { DraftSaver } from "./draftSaver";
 import { Loading } from "./Loading";
 import { createPortal } from "react-dom";
 import { type SignatureMethod } from "./Signature";
@@ -20,6 +21,9 @@ type Recipient = {
   first_name: string;
   last_name: string;
 };
+function documentStatus(document: DocumentSummary) {
+  return document.status === "sent" && document.viewed_at ? "viewed" : document.status;
+}
 export default function Admin({
   homeRequest,
   cachedDocuments,
@@ -82,6 +86,34 @@ export default function Admin({
       ?.querySelector<HTMLInputElement>("input")
       ?.focus({ preventScroll: true });
   }, [recipientEditor]);
+  const [autosaveAvailable, setAutosaveAvailable] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("");
+  const draftSaver = useRef<DraftSaver | undefined>(undefined);
+  useEffect(() => {
+    if (selected?.status !== "draft" || !autosaveAvailable) {
+      draftSaver.current = undefined;
+      return;
+    }
+    const document = selected;
+    const saver = new DraftSaver(document.fields, document.draft_revision || 0,
+      async (fields, revision) => {
+        const result = await api("save_draft", { documentId: document.id, expectedPath: document.original_path, fields, revision });
+        return result.revision;
+      },
+      (status) => { if (draftSaver.current === saver) setSaveStatus(status); },
+    );
+    draftSaver.current = saver;
+    setSaveStatus("Draft saved");
+    return () => { void saver.flush().catch(() => {}); };
+  }, [selected?.id, selected?.original_path, selected?.draft_revision, selected?.status, autosaveAvailable]);
+  useEffect(() => { draftSaver.current?.update(fields); }, [fields]);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (draftSaver.current?.dirty) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
   const today = useSigningDate();
   const detailRequest = useRef(0);
   const listRequest = useRef(0);
@@ -93,7 +125,8 @@ export default function Admin({
     },
     [],
   );
-  function goHome() {
+  async function goHome() {
+    try { await draftSaver.current?.flush(); } catch (error) { setMessage((error as Error).message); return; }
     detailRequest.current++;
     setSelected(undefined);
     setShare("");
@@ -164,6 +197,7 @@ export default function Admin({
     try {
       const data = await api("detail", { documentId: id });
       if (request !== detailRequest.current) return false;
+      setAutosaveAvailable(data.capabilities?.draftAutosave === true);
       setEditingAvailable(data.capabilities?.pdfEditing === true);
       setPageRangesAvailable(data.capabilities?.pdfPageRanges === true);
       if (selected?.id !== id) {
@@ -214,6 +248,7 @@ export default function Admin({
     );
   }
   async function send() {
+    await draftSaver.current?.flush();
     const result = await api("send", {
       documentId: selected!.id,
       fields,
@@ -488,7 +523,7 @@ export default function Admin({
                       {new Date(doc.created_at).toLocaleDateString()}
                     </small>
                   </span>
-                  <span className={`badge ${doc.status}`}>{doc.status}</span>
+                  <span className={`badge ${documentStatus(doc)}`}>{documentStatus(doc)}</span>
                 </button>
               ))}
           </aside>
@@ -511,8 +546,8 @@ export default function Admin({
                 </button>
                 <div className="split">
                   <h2>{selected.title}</h2>
-                  <span className={`badge ${selected.status}`}>
-                    {selected.status}
+                  <span className={`badge ${documentStatus(selected)}`}>
+                    {documentStatus(selected)}
                   </span>
                 </div>
                 {selected.status === "draft" && (
@@ -712,7 +747,14 @@ export default function Admin({
                         </option>
                       </select>
                     </label>
-                    <button disabled={busy || !ready}>
+                    <p className={`draft-save-status ${saveStatus.startsWith("Draft not saved") ? "error" : ""}`} aria-live="polite">
+                      {autosaveAvailable ? saveStatus : "Automatic draft saving requires the backend update. Fields are not saved yet."}
+                    </p>
+                    {autosaveAvailable && saveStatus.startsWith("Draft not saved") && (
+                      <button type="button" className="secondary" onClick={() => void draftSaver.current?.retry().catch(() => {})}>Retry saving draft</button>
+                    )}
+                    {autosaveAvailable && <small>Field positions save automatically. Signatures must be applied again when reopening a draft.</small>}
+                    <button disabled={busy || !ready || saveStatus.startsWith("Draft not saved")}>
                       {busy
                         ? "Preparing…"
                         : delivery === "share"
@@ -902,6 +944,7 @@ export default function Admin({
                         selected.status === "draft" && editingAvailable
                           ? (operation, page, file, range) =>
                               task(async () => {
+                                await draftSaver.current?.flush();
                                 await editDocumentPdf(
                                   selected.id,
                                   selected.original_path,

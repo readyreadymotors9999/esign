@@ -6,6 +6,7 @@ import {
   gmailConfig,
   gmailAccessToken,
   sendGmail,
+  sendNotification,
 } from "../_shared/gmail.ts";
 import { editPdf, type PdfEdit } from "../_shared/edit-pdf.ts";
 import { generateSignedPdf } from "../_shared/pdf.ts";
@@ -92,6 +93,32 @@ async function audit(
     metadata,
   });
   check(error);
+}
+async function deliverNotifications(documentId?: string) {
+  try {
+    const { data: pending, error } = await db.rpc("claim_email_notifications", { p_document: documentId || null });
+    check(error);
+    if (!pending?.length) return;
+    let token: string;
+    try {
+      token = await gmailAccessToken(gmailConfig((name) => Deno.env.get(name)));
+    } catch {
+      // Leased messages become eligible again after five minutes.
+      console.error("Notification Gmail authorization failed; queued for retry");
+      return;
+    }
+    await Promise.all(pending.map(async (notice: any) => {
+      try {
+        const providerId = await sendNotification(token, notice.recipient, notice.subject, notice.message, notice.id);
+        const { error } = await db.from("email_notifications").update({ status: "sent", sent_at: new Date().toISOString(), provider_id: providerId }).eq("id", notice.id).eq("attempts", notice.attempts);
+        check(error);
+      } catch {
+        console.error("Notification delivery unconfirmed; queued for retry");
+      }
+    }));
+  } catch {
+    console.error("Notification queue unavailable; signing state preserved");
+  }
 }
 async function sessionFor(token: unknown) {
   const hash = await digest(tokenValue(token));
@@ -225,6 +252,7 @@ async function complete(body: any, request: Request) {
     });
     check(finishError);
     finished = true;
+    await deliverNotifications(doc.id);
     return { completed: true };
   } catch (e) {
     // A failed/ambiguous finalization stays processing: never re-enable a token
@@ -289,7 +317,7 @@ Deno.serve(async (request) => {
     if (body.action === "session") {
       const s = await sessionFor(body.token),
         doc = await documentFor(s.document_id);
-      await audit(doc.id, "document_viewed", s.recipient_email, s.id);
+
       return json({
         title: doc.title,
         email: s.recipient_email,
@@ -298,6 +326,20 @@ Deno.serve(async (request) => {
         expires_at: s.expires_at,
         url: await signedUrl(doc.prepared_path || doc.original_path),
       });
+    }
+    if (body.action === "viewed") {
+      const session = await sessionFor(body.token);
+      const { error } = await db.rpc("mark_document_viewed", { p_session: session.id });
+      check(error);
+      await deliverNotifications(session.document_id);
+      return json({ ok: true });
+    }
+    // For Supabase Cron only; never expose this credential to the frontend.
+    if (body.action === "process_notifications") {
+      if (request.headers.get("authorization") !== `Bearer ${env("SUPABASE_SERVICE_ROLE_KEY")}`)
+        fail("Unauthorized.", 401);
+      await deliverNotifications();
+      return json({ ok: true });
     }
     if (body.action === "complete") return json(await complete(body, request));
     // verify_jwt is off for account-free recipients. Every admin action must pass
@@ -379,6 +421,22 @@ Deno.serve(async (request) => {
     )
       fail("Invalid document ID.");
     const doc = await documentFor(body.documentId, user.id);
+    if (body.action === "save_draft") {
+      if (doc.status !== "draft" || doc.original_path !== body.expectedPath)
+        fail("Document changed. Refresh before saving.", 409);
+      if (!Number.isInteger(body.revision) || body.revision < 0) fail("Invalid draft revision.");
+      const pdf = await PDFDocument.load(await original(doc.original_path));
+      const fields = validateFields(body.fields, pdf.getPageCount(), false);
+      if (fields.some((field) => !["company", "recipient"].includes(field.signer || "")))
+        fail("Invalid field signer.");
+      const { data, error } = await db.from("documents")
+        .update({ fields, draft_revision: body.revision + 1 })
+        .eq("id", doc.id).eq("status", "draft").eq("original_path", body.expectedPath)
+        .eq("draft_revision", body.revision).select("draft_revision").maybeSingle();
+      check(error);
+      if (!data) fail("This draft changed in another tab. Refresh before saving.", 409);
+      return json({ revision: data.draft_revision });
+    }
     if (body.action === "edit_pdf") {
       if (doc.status !== "draft" || body.expectedPath !== doc.original_path)
         fail(
@@ -477,6 +535,7 @@ Deno.serve(async (request) => {
       return json({ ok: true });
     }
     if (body.action === "detail") {
+      await deliverNotifications(doc.id);
       const { data, error } = await db
         .from("audit_records")
         .select("*")
@@ -484,7 +543,7 @@ Deno.serve(async (request) => {
         .order("created_at");
       check(error);
       return json({
-        capabilities: { pdfEditing: true, pdfPageRanges: true },
+        capabilities: { pdfEditing: true, pdfPageRanges: true, draftAutosave: true },
         document: doc,
         audit: data,
         url:

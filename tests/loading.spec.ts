@@ -64,7 +64,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
       const requestUrl = new URL(route.request().url());
       expect(requestUrl.pathname).toBe("/rest/v1/documents");
       expect(requestUrl.searchParams.get("select")).toBe(
-        "id,title,status,created_at",
+        "id,title,status,created_at,viewed_at",
       );
       const snapshot = structuredClone([doc]);
       await listGate;
@@ -137,7 +137,7 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     page.getByRole("button", { name: "Signature", exact: true }),
   ).toBeEnabled();
   await page.getByRole("button", { name: "Signature", exact: true }).click();
-  await expect(page.locator(".pdf-page")).toHaveCSS("cursor", "default");
+  await expect(page.locator(".pdf-page")).toHaveCSS("cursor", "grab");
   const rect = (await page.locator(".pdf-page").boundingBox())!;
   await page.mouse.move(rect.x + 40, rect.y + 80);
   await expect(page.getByTestId("field-placement-preview")).toBeVisible();

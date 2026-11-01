@@ -233,6 +233,11 @@ function Signer({ token }: { token: string }) {
       })
       .catch((e) => setError(e.message));
   }, [token]);
+  useEffect(() => {
+    if (!pdfReady || !data || done) return;
+    // Notify only after PDF rendering succeeds, never on link prefetch alone.
+    void api("viewed", { token }).catch(() => {});
+  }, [pdfReady, data, token, done]);
   if (done) return <Completion />;
   return (
     <div className="signer">

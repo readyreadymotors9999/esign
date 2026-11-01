@@ -501,7 +501,10 @@ export function Pdf({
               aria-label="Reset PDF zoom to 100%"
               onClick={() => setPreviewZoom(1)}
             >
-              ↺ 100%
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M8 11V8h3m2 0h3v3m0 2v3h-3m-2 0H8v-3" strokeLinecap="round" />
+              </svg>
             </button>
           </div>,
           zoomHost,

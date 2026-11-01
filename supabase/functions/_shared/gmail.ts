@@ -156,3 +156,40 @@ export async function sendGmail(
     );
   return data.id;
 }
+
+function encodedSubject(value: string) {
+  const characters = Array.from(value);
+  const words: string[] = [];
+  for (let i = 0; i < characters.length; i += 12)
+    words.push(`=?UTF-8?B?${base64Utf8(characters.slice(i, i + 12).join(""))}?=`);
+  return words.join("\r\n ");
+}
+// One notification per recipient; names/titles are encoded, never raw MIME headers.
+export function notificationRaw(email: string, subject: string, message: string, id: string) {
+  if (!/^[a-zA-Z0-9-]+$/.test(id)) throw new GmailError("Invalid notification ID.");
+  const mime = [
+    `From: Ready Ready Motors <${GMAIL_SENDER}>`,
+    `To: ${emailAddress(email)}`,
+    `Reply-To: ${GMAIL_SENDER}`,
+    `Subject: ${encodedSubject(subject)}`,
+    `Message-ID: <esign-notification-${id}@gmail.com>`,
+    `Date: ${new Date().toUTCString()}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '', lines64(base64Utf8(message)), '',
+  ].join('\r\n');
+  return base64Utf8(mime).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+export async function sendNotification(accessToken: string, email: string, subject: string, message: string, id: string, request: typeof fetch = fetch) {
+  const response = await request('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: notificationRaw(email, subject, message, id) }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) throw new GmailError('Notification delivery was not confirmed.');
+  const data = await response.json();
+  if (typeof data.id !== 'string' || !data.id) throw new GmailError('Notification message ID missing.');
+  return data.id as string;
+}

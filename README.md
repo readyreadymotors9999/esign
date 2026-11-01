@@ -351,3 +351,54 @@ Click anywhere outside a field to remove its selection outline and hide its sign
 Authenticated admin previews keep a bounded **RAM-only, two-minute** cache of recently downloaded PDFs (up to 20 MB/four files) and page bitmaps (up to 48 MB/six entries). Reopening always retrieves fresh authorized document details first. Cache keys include the document owner, ID, signing status and immutable source Storage path; bitmap keys also include page and physical rendering width. New file revisions, prepared/signed PDFs and changed sizes use different entries. Initial downloads continue to use PDF.js's normal streaming path; completed downloads and unadorned page renders can then be reused. Fields and signature choices remain separate from the cached page images.
 
 No PDF data is persisted in sessionStorage, localStorage or a service worker. Expiry and sign-out/account changes clear the RAM cache; writes from an older cache generation are ignored. Public token-based recipient previews do not use this cache. No Supabase deployment or SQL changes are needed.
+
+### Participant notifications and automatic field draft saving (2026-10-31)
+
+Apply the backend update before relying on notifications or draft autosave:
+
+```sh
+npx supabase link --project-ref nyjhgexemcxfncoepudy
+npx supabase db push
+npx supabase functions deploy esign --project-ref nyjhgexemcxfncoepudy --no-verify-jwt --use-api
+```
+
+The new migration is `202611010001_notifications_drafts.sql`. Use the existing Gmail secrets (`GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`); the same verified sender and `gmail.send` permission handle invitations and notifications. Configure Gmail even when invitations use a share link, since those signers also receive completion notifications. No notification is sent retroactively for documents completed before this migration.
+
+- On the recipient's first successfully rendered PDF per invitation, the service records Viewed and queues `Junjie Wu has viewed the document "寄卖合同 - Junjie Wu"` to **readyreadymotors9999@gmail.com**. Names and titles come from the document's saved invitation. Reloads do not enqueue additional notices. The admin PDF preview does not trigger this event; a private recipient link identifies its intended signer through possession of that link.
+- When the company and invited recipient have signed, the finalization transaction queues `"寄卖合同 - Junjie Wu" document has been completed by all participants` separately to **readyreadymotors9999@gmail.com** and **the actual recipient email**. Duplicate addresses collapse to one message. The current application supports one company signer and one recipient. Notifications contain the document title and status, without private signing links or PDF attachments.
+- Dashboard badges show **Viewed** after the first view. These documents stay in **Waiting for others**; the underlying status stays `sent`, preserving signing/reopen behavior. Reopening clears the view marker, and a new invitation can produce a new view notice.
+- Field placement, movement, duplication and deletion automatically save after 600 ms without changes. Wait for **Draft saved** before refreshing or closing. Navigation back to the list, sending and PDF editing flush pending saves first. A refresh/close while unsaved prompts the browser's standard leave confirmation. Failed saves remain visibly unsaved and have a Retry button; revision conflicts stop writes rather than overwriting another tab. Field layouts persist across refreshes/devices. Signatures and consent are deliberately reapplied when reopening; recipient contact inputs still use the existing contact-save/send flow. The UI reports autosave unavailable until the updated Edge Function advertises support.
+- The zoom reset button uses an outer square and broken inner square icon, with its accessible reset label retained.
+
+Notifications are queued durably and attempted immediately; opening document detail also retries eligible notices. **Configure the scheduled retry below for unattended delivery during temporary Gmail failures.** A lease prevents concurrent workers from sending the same queued message. A crash after Gmail accepts a message but before delivery is recorded can still cause a duplicate on retry; Gmail has no transactional idempotency API.
+
+#### Enable unattended notification retries in Supabase
+
+In the Supabase Dashboard, enable **Cron (pg_cron)** and **pg_net**, then create two Vault secrets using the Vault UI:
+
+- `esign_project_url`: `https://nyjhgexemcxfncoepudy.supabase.co`
+- `esign_service_role_key`: this project's **legacy service-role JWT** (server-only; never put it in frontend variables, this repository, or chat).
+
+Run this in the Supabase SQL editor to invoke the queue every five minutes:
+
+```sql
+select cron.schedule(
+  'esign-notification-retries',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name='esign_project_url') || '/functions/v1/esign',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name='esign_service_role_key')
+    ),
+    body := '{"action":"process_notifications"}'::jsonb,
+    timeout_milliseconds := 60000
+  );
+  $$
+);
+```
+
+Only the backend service-role bearer can call `process_notifications`; ordinary users and recipient tokens cannot drain the global queue. It processes up to ten eligible notices per run. Unconfirmed sends become eligible after five minutes. Queue contents are service-only; inspect `public.email_notifications` in the SQL editor for `status`, `attempts`, `sent_at`, and Gmail `provider_id`. A successful API invocation alone does not prove delivery: check `sent_at` and the receiving inbox.
+
+Acceptance: invite a test recipient, open its link and wait for PDF rendering; confirm one Viewed badge and one view email despite reloads. Complete signing; confirm two completion emails and two `sent` queue entries. Simulate a transient mail failure in staging and verify scheduled retries send the retained records. Add/move a field, wait for Draft saved, refresh and reopen; verify its layout remains. Backend behavior has automated mocked-mail and local PostgreSQL tests; live Gmail delivery still requires this deployment and configured credentials.
