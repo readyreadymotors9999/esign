@@ -312,6 +312,9 @@ test.describe("High density PDF preview", () => {
       await page.getByRole("button", { name: "Discard all changes", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(0);
       expect(doc.fields).toHaveLength(0);
+      await expect(page.getByText("All changes discarded", { exact: true })).toBeVisible();
+      await page.clock.fastForward(1600);
+      await expect(page.getByText("All changes discarded", { exact: true })).toHaveCount(0);
       await page.getByRole("button", { name: "Redo draft edit", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(1);
 

@@ -21,7 +21,11 @@ test("document signer roster excludes unselected contacts and signatures apply o
     const body=route.request().postDataJSON();
     if(body.action==="recipients")return route.fulfill({json:{recipients:contacts}});
     if(body.action==="detail")return route.fulfill({json:{document:doc,audit:[],url:"/signers.pdf",capabilities:{draftAutosave:true,draftRestore:true,documentSigners:true}}});
-    if(body.action==="save_recipient")return route.fulfill({json:{recipient:contacts.find(contact=>contact.id===body.recipientId)}});
+    if(body.action==="save_recipient") {
+      let contact=contacts.find(contact=>contact.id===body.recipientId);
+      if(!contact){ contact={id:"dave",first_name:body.firstName,last_name:body.lastName,email:body.email};contacts.push(contact); }
+      return route.fulfill({json:{recipient:contact}});
+    }
     if(body.action==="save_draft"){
       expect(body.revision).toBe(doc.draft_revision);doc.fields=body.fields;doc.signers=body.signers;doc.draft_revision++;
       return route.fulfill({json:{revision:doc.draft_revision}});
@@ -32,7 +36,7 @@ test("document signer roster excludes unselected contacts and signatures apply o
   await page.getByRole("button",{name:/PDF Selected signers/}).click();
   const signer=page.getByLabel("Field signer",{exact:true});
   await expect(signer).toHaveValue("company");
-  await expect(signer.locator("option")).toHaveCount(2);
+  await expect(signer.locator("option")).toHaveCount(3);
   await expect(signer).not.toContainText("Alice");await expect(signer).not.toContainText("Carol");
   const first=page.getByRole("button",{name:"Open company signature field 1 on page 1",exact:true});
   await first.click();
@@ -54,15 +58,25 @@ test("document signer roster excludes unselected contacts and signatures apply o
     await page.getByRole("button",{name:"Save and add as signer",exact:true}).click();
     await expect(signer).toContainText(contact.first_name);
   }
-  await expect(signer.locator("option")).toHaveCount(4);
+  await expect(signer.locator("option")).toHaveCount(5);
   await expect(signer).not.toContainText("Carol");
   await first.click();
   const owners=page.getByLabel("Signer for field 1",{exact:true});
   await expect(owners.locator("option")).toHaveCount(3);
   await expect(owners).toContainText("Alice Chen");await expect(owners).toContainText("Bob Wu");await expect(owners).not.toContainText("Carol");
+  await signer.selectOption("new");
+  await expect(page.getByLabel("Saved recipient")).toHaveCount(0);
+  await expect(page.getByRole("button",{name:"Add new signer",exact:true})).toHaveAttribute("aria-pressed","true");
+  await page.getByLabel("Recipient first name").fill("Dave");
+  await page.getByLabel("Recipient last name").fill("Park");
+  await page.getByLabel("Recipient email").fill("dave@example.com");
+  await page.getByRole("button",{name:"Save and add as signer",exact:true}).click();
+  await expect(signer).toContainText("Dave Park");
   await page.getByRole("button",{name:"Save draft",exact:true}).click();
-  expect(doc.signers.map((signer:any)=>signer.email)).toEqual(["alice@example.com","bob@example.com"]);
+  await expect(page.getByText("Document saved",{exact:true})).toBeVisible();
+  await expect(page.getByText("Document saved",{exact:true})).toHaveCount(0);
+  expect(doc.signers.map((signer:any)=>signer.email)).toEqual(["alice@example.com","bob@example.com","dave@example.com"]);
   await page.reload();await page.getByRole("button",{name:/PDF Selected signers/}).click();
-  await expect(page.getByLabel("Field signer",{exact:true}).locator("option")).toHaveCount(4);
+  await expect(page.getByLabel("Field signer",{exact:true}).locator("option")).toHaveCount(6);
   await expect(page.locator(".field-content img")).toHaveCount(0);
 });

@@ -84,6 +84,7 @@ export default function Admin({
     null,
   );
   const [recipientEditor, setRecipientEditor] = useState(false);
+  const [recipientMode, setRecipientMode] = useState<"saved" | "new">("saved");
   const [filter, setFilter] = useState("all");
   useEffect(() => {
     if (!recipientEditor) return;
@@ -92,15 +93,20 @@ export default function Admin({
       block: "nearest",
     });
     panel
-      ?.querySelector<HTMLInputElement>("input")
+      ?.querySelector<HTMLElement>(recipientMode === "saved" ? "select" : "input")
       ?.focus({ preventScroll: true });
-  }, [recipientEditor]);
+  }, [recipientEditor, recipientMode]);
   const [autosaveAvailable, setAutosaveAvailable] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
-  const [autosaveToast, setAutosaveToast] = useState(false);
+  const [autosaveToast, setAutosaveToast] = useState("");
   const autosaveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  function showCenteredNotice(text: string) {
+    clearTimeout(autosaveToastTimer.current);
+    setAutosaveToast(text);
+    autosaveToastTimer.current = setTimeout(() => setAutosaveToast(""), 1600);
+  }
   useEffect(() => {
-    setAutosaveToast(false);
+    setAutosaveToast("");
     clearTimeout(autosaveToastTimer.current);
     return () => clearTimeout(autosaveToastTimer.current);
   }, [selected?.id, selected?.status]);
@@ -119,9 +125,7 @@ export default function Admin({
       (status) => { if (draftSaver.current === saver) setSaveStatus(status); },
       () => {
         if (draftSaver.current !== saver) return;
-        clearTimeout(autosaveToastTimer.current);
-        setAutosaveToast(true);
-        autosaveToastTimer.current = setTimeout(() => setAutosaveToast(false), 1600);
+        showCenteredNotice("Draft autosaved");
       },
     );
     draftSaver.current = saver;
@@ -177,6 +181,7 @@ export default function Admin({
     }
     updateHistory(value => value + 1);
     await refresh();
+    if (operation === "discard") showCenteredNotice("All changes discarded");
     setMessage(operation === "discard" ? "Restored the draft to when you opened this editor. Previously autosaved edits were reverted." : "Draft restored and saved. Apply your signature again before sending.");
   }
   async function saveDraftNow() {
@@ -186,6 +191,7 @@ export default function Admin({
       setSelected({ ...selected, title: rename.trim(), fields, draft_revision: result.revision ?? selected.draft_revision });
       await refresh();
     }
+    showCenteredNotice("Document saved");
     setMessage("Draft saved. Field layout and filename are saved; apply your signature again when reopening.");
   }
   const pendingHistory = !!selected && !!history.current && JSON.stringify(currentSnapshot()) !== JSON.stringify(history.current.entries.current);
@@ -391,7 +397,7 @@ export default function Admin({
     <div className={`admin-workspace ${selected ? "document-open" : ""}`}>
       {autosaveToast && selected?.status === "draft" && (
         <div className="autosave-toast" role="status" aria-live="polite">
-          <span aria-hidden="true">✓</span> <span>Draft autosaved</span>
+          <span aria-hidden="true">✓</span> <span>{autosaveToast}</span>
         </div>
       )}
       {showSignature && (
@@ -706,7 +712,7 @@ export default function Admin({
                       aria-label="Manage recipient"
                     >
                       <div className="split">
-                        <h3>Recipient</h3>
+                        <h3>Add document signer</h3>
                         <button
                           type="button"
                           className="secondary"
@@ -716,7 +722,11 @@ export default function Admin({
                           ×
                         </button>
                       </div>
-                      <label>
+                      <div className="signer-source" role="group" aria-label="Add signer source">
+                        <button type="button" className={recipientMode === "saved" ? "active" : "secondary"} aria-pressed={recipientMode === "saved"} onClick={() => setRecipientMode("saved")}>Choose from recipients</button>
+                        <button type="button" className={recipientMode === "new" ? "active" : "secondary"} aria-pressed={recipientMode === "new"} onClick={() => { setRecipientMode("new"); setRecipientId(""); setEmail(""); setFirst(""); setLast(""); }}>Add new signer</button>
+                      </div>
+                      {recipientMode === "saved" && <label>
                         Saved recipient
                         <select
                           value={recipientId}
@@ -738,14 +748,14 @@ export default function Admin({
                             }
                           }}
                         >
-                          <option value="">Add new recipient…</option>
+                          <option value="">Choose a saved recipient…</option>
                           {recipients.map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.first_name} {r.last_name} · {r.email}
                             </option>
                           ))}
                         </select>
-                      </label>
+                      </label>}
                       <div className="name-fields">
                         <label>
                           Recipient first name
@@ -1044,6 +1054,7 @@ export default function Admin({
                       signerNames={Object.fromEntries([["company", "Lichen Wang"], ...documentSigners.map(signer => [signer.id, signer.name])])}
                       onRecipientHost={setRecipientHost}
                       onChooseRecipient={(id) => {
+                        setRecipientMode(id === "__new" ? "new" : "saved");
                         const signer = documentSigners.find(signer => signer.id === id);
                         if (signer) {
                           const contact = recipients.find(contact => contact.email === signer.email);

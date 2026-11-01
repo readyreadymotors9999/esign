@@ -258,8 +258,8 @@ export function Pdf({
           value={signer}
           onChange={(e) => {
             cancelPlacement();
-            if (e.target.value === "manage") {
-              onChooseRecipient?.();
+            if (e.target.value === "manage" || e.target.value === "new") {
+              onChooseRecipient?.(e.target.value === "new" ? "__new" : "__saved");
               return;
             }
             setSigner(e.target.value);
@@ -269,7 +269,8 @@ export function Pdf({
           {Object.entries(signerNames).filter(([id, name]) => id !== "company" && name).map(([id, name]) => (
             <option key={id} value={id}>{name}</option>
           ))}
-          <option value="manage">Add signer…</option>
+          <option value="manage">Choose from recipients…</option>
+          <option value="new">Add new signer…</option>
         </select>
       </label>
       {signer !== "company" && signerNames[signer] && (
@@ -782,6 +783,15 @@ function Page({
       render?.cancel();
     };
   }, [pdf, page, pixelWidth, cacheKey, onRendered, onFailure]);
+  function menuStyle(index: number) {
+    const button = container.current?.querySelector<HTMLElement>(`[data-field-settings="${index}"]`);
+    if (!button) return undefined;
+    const controls = button.parentElement!.getBoundingClientRect();
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(260, window.innerWidth - 32);
+    const viewportLeft = Math.max(16, Math.min(rect.right - width, window.innerWidth - width - 16));
+    return { width, left: viewportLeft - controls.left, right: "auto" };
+  }
   return (
     <div
       ref={container}
@@ -960,6 +970,7 @@ function Page({
                   <button
                     type="button"
                     className="field-settings"
+                    data-field-settings={i}
                     aria-label={`Field settings ${i + 1}`}
                     aria-expanded={menuField === i}
                     onClick={() => onMenu(i)}
@@ -967,7 +978,7 @@ function Page({
                     ⚙
                   </button>
                   {menuField === i && (
-                    <div className="field-menu" role="menu">
+                    <div className="field-menu" role="menu" style={menuStyle(i)}>
                       {f.type === "signature" && editableSigners.includes(owner) && onChangeSignature && (
                         <button type="button" role="menuitem" onClick={() => { onMenu(i); onChangeSignature(i, f); }}>Change signature style</button>
                       )}

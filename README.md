@@ -454,3 +454,6 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 ```
 
 Acceptance: add two selected contacts while leaving a third unselected; confirm the third never appears in field owner choices. Sign Lichen's boxes individually, invite both signers, complete one and verify the document remains waiting, then complete the other and verify all signatures/certificates and three final-PDF emails. Verify first-click styling, later one-box application, filled-box controls, style changes, and draft roster persistence. Automated tests cover roster isolation, per-box gating, multi-participant PDF preservation, concurrent submission guards, invitation cancellation, and completion-only notifications. Live Gmail delivery requires owner deployment and inbox verification.
+
+
+The signer selector now exposes **Choose from recipients…** and **Add new signer…** as separate entries. The signer editor also has explicit source buttons for switching between saved contacts and a new recipient. Field settings menus fit the longest action label and clamp to viewport edges. Manual Save draft and successful Discard all changes display centered translucent confirmations (**Document saved** / **All changes discarded**) for 1.6 seconds, sharing the existing non-blocking autosave feedback. This update is frontend-only and requires no new Supabase migration or function deployment.

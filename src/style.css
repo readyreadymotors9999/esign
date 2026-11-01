@@ -1803,3 +1803,16 @@ summary:focus-visible,
 .account-dropdown a:hover,
 .account-dropdown button:hover { background: #eef5f1; }
 .account-dropdown p { margin: 8px; font-size: 12px; color: #a33228; }
+
+/* Size field actions for complete labels while retaining viewport boundaries. */
+.field-controls .field-menu {
+  width: max-content;
+  min-width: 224px;
+  max-width: min(280px, calc(100vw - 32px));
+}
+.pdf-page .field .field-menu button {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.signer-source { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.signer-source button { flex: 1; font-size: 12px; }
