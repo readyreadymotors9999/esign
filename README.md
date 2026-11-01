@@ -420,3 +420,14 @@ Deploy the new `202611010002_draft_restore.sql` migration and redeploy `esign` w
 
 
 The header account entry and account page are labeled **My Account**. The header tagline is removed. Automatic field saving runs five minutes after the first unsaved change; continued editing does not postpone that save. It saves the latest layout, then shows a non-blocking, translucent **Draft autosaved** message in the screen center for 1.6 seconds after a successful automatic save. Initial document loading, failed saves, and manual saves do not trigger that automatic-save message. Pending writes still flush immediately when sending, editing PDF pages, leaving the editor, or choosing Save draft.
+
+
+For future changes involving Supabase schema or Edge Functions, always remind the owner to run this deployment sequence (the owner deploys the backend):
+
+```sh
+npx supabase link --project-ref nyjhgexemcxfncoepudy
+npx supabase db push
+npx supabase functions deploy esign --no-verify-jwt --use-api
+```
+
+Field-level signer dropdowns use the same opaque signer colour as their adjacent settings button, with white text/chevron and no border. This styling update is frontend-only.
