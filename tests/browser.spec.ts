@@ -270,6 +270,7 @@ test.describe("High density PDF preview", () => {
       await page
         .getByRole("button", { name: "Signature", exact: true })
         .click();
+      await page.clock.install();
       let target = (await page.locator(".pdf-page").first().boundingBox())!;
       await page.mouse.move(target.x + 180, target.y + 140);
       const ghost = page.getByTestId("field-placement-preview");
@@ -286,6 +287,9 @@ test.describe("High density PDF preview", () => {
       for (const key of ["x", "y", "width", "height"] as const)
         expect(Math.abs(placed[key] - ghostBox[key])).toBeLessThanOrEqual(1);
       await expect(page.getByTestId("field-placement-preview")).toHaveCount(0);
+      await expect(page.getByText("Unsaved changes · autosaves every 5 minutes", { exact: true })).toBeVisible();
+      expect(doc.fields).toHaveLength(0);
+      await page.clock.fastForward(300000);
       await expect(page.getByText("Draft saved", { exact: true })).toBeVisible();
       expect(doc.fields).toHaveLength(1);
       const autosaveNotice = page.getByText("Draft autosaved", { exact: true });
@@ -294,6 +298,7 @@ test.describe("High density PDF preview", () => {
       const viewport = page.viewportSize()!;
       expect(Math.abs(noticeBox.x + noticeBox.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
       expect(Math.abs(noticeBox.y + noticeBox.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+      await page.clock.fastForward(1600);
       await expect(autosaveNotice).toHaveCount(0);
 
       await page.getByRole("button", { name: "Undo draft edit", exact: true }).click();

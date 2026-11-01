@@ -837,7 +837,7 @@ export default function Admin({
                     {autosaveAvailable && saveStatus.startsWith("Draft not saved") && (
                       <button type="button" className="secondary" onClick={() => void draftSaver.current?.retry().catch(() => {})}>Retry saving draft</button>
                     )}
-                    {autosaveAvailable && <small>Field positions save automatically. Signatures must be applied again when reopening a draft.</small>}
+                    {autosaveAvailable && <small>Use Save draft to save now. Unsaved field changes autosave every 5 minutes. Signatures must be applied again when reopening a draft.</small>}
                     <button disabled={busy || !ready || saveStatus.startsWith("Draft not saved")}>
                       {busy
                         ? "Preparing…"
