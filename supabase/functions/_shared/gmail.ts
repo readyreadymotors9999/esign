@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { emailAddress, escapeHtml } from "./validation.ts";
 export const GMAIL_SENDER = "readyreadymotors9999@gmail.com";
 export class GmailError extends Error {}
@@ -19,14 +20,10 @@ export function gmailConfig(
   return { clientId, clientSecret, refreshToken };
 }
 function base64Utf8(value: string) {
-  return btoa(
-    Array.from(new TextEncoder().encode(value), (v) =>
-      String.fromCharCode(v),
-    ).join(""),
-  );
+  return Buffer.from(value, "utf8").toString("base64");
 }
 function lines64(value: string) {
-  return value.match(/.{1,76}/g)?.join("\r\n") || "";
+  return value.replace(/(.{76})(?=.)/g, "$1\r\n");
 }
 export function invitationRaw(
   email: string,
@@ -165,8 +162,10 @@ function encodedSubject(value: string) {
   return words.join("\r\n ");
 }
 // One notification per recipient; names/titles are encoded, never raw MIME headers.
-export function notificationRaw(email: string, subject: string, message: string, id: string) {
+export type PdfAttachment = { filename: string; bytes: Uint8Array };
+export function notificationRaw(email: string, subject: string, message: string, id: string, attachment?: PdfAttachment) {
   if (!/^[a-zA-Z0-9-]+$/.test(id)) throw new GmailError("Invalid notification ID.");
+  const boundary = `esign-attachment-${id}`;
   const mime = [
     `From: Ready Ready Motors <${GMAIL_SENDER}>`,
     `To: ${emailAddress(email)}`,
@@ -175,17 +174,26 @@ export function notificationRaw(email: string, subject: string, message: string,
     `Message-ID: <esign-notification-${id}@gmail.com>`,
     `Date: ${new Date().toUTCString()}`,
     'MIME-Version: 1.0',
+    ...(attachment ? [`Content-Type: multipart/mixed; boundary="${boundary}"`, '', `--${boundary}`] : []),
     'Content-Type: text/plain; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '', lines64(base64Utf8(message)), '',
+    ...(attachment ? [
+      `--${boundary}`,
+      'Content-Type: application/pdf; name="completed-document.pdf"',
+      `Content-Disposition: attachment; filename="completed-document.pdf"; filename*=UTF-8''${encodeURIComponent(attachment.filename).replace(/'/g, "%27")}`,
+      'Content-Transfer-Encoding: base64', '',
+      lines64(Buffer.from(attachment.bytes.buffer, attachment.bytes.byteOffset, attachment.bytes.byteLength).toString("base64")),
+      `--${boundary}--`, '',
+    ] : []),
   ].join('\r\n');
   return base64Utf8(mime).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-export async function sendNotification(accessToken: string, email: string, subject: string, message: string, id: string, request: typeof fetch = fetch) {
+export async function sendNotification(accessToken: string, email: string, subject: string, message: string, id: string, request: typeof fetch = fetch, attachment?: PdfAttachment) {
   const response = await request('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw: notificationRaw(email, subject, message, id) }),
+    body: JSON.stringify({ raw: notificationRaw(email, subject, message, id, attachment) }),
     signal: AbortSignal.timeout(20000),
   });
   if (!response.ok) throw new GmailError('Notification delivery was not confirmed.');

@@ -1,0 +1,23 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DraftHistory } from '../src/draftHistory.ts';
+test('discard baseline survives autosaves, PDF revisions, undo/redo, and branching edits',()=>{
+ const initial={path:'original.pdf',title:'Agreement',fields:[]};
+ const history=new DraftHistory(initial);
+ history.record({...initial,fields:[{x:0.1}]});
+ history.record({path:'revision.pdf',title:'Renamed',fields:[{x:0.2}]});
+ assert.deepEqual(history.initial,initial);
+ assert.equal(history.canUndo,true);
+ history.index--;
+ assert.equal(history.canRedo,true);
+ assert.equal(history.current.fields[0].x,0.1);
+ history.index++;
+ assert.equal(history.current.path,'revision.pdf');
+ history.index=0;
+ assert.deepEqual(history.current,initial);
+ history.record({...initial,title:'New branch'});
+ assert.equal(history.canRedo,false);
+ assert.deepEqual(history.initial,initial);
+ const copy=history.current;copy.fields.push({x:0.9});
+ assert.equal(history.current.fields.length,0);
+});

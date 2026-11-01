@@ -107,15 +107,27 @@ async function deliverNotifications(documentId?: string) {
       console.error("Notification Gmail authorization failed; queued for retry");
       return;
     }
-    await Promise.all(pending.map(async (notice: any) => {
+    // Send sequentially to bound memory when attaching large completed PDFs.
+    for (const notice of pending) {
       try {
-        const providerId = await sendNotification(token, notice.recipient, notice.subject, notice.message, notice.id);
+        let attachment;
+        if (notice.kind === "completed") {
+          // Use this immutable session's final bytes, including its audit certificates.
+          const { data: session, error } = await db.from("signing_sessions").select("status,document_id").eq("id", notice.session_id).single();
+          check(error);
+          if (!session || session.status !== "completed" || session.document_id !== notice.document_id) throw new Error("Completion unavailable");
+          const document = await documentFor(notice.document_id);
+          const path = `${notice.document_id}/signed-${notice.session_id}.pdf`;
+          const filename = document.title.replace(/[\r\n\/\\]/g, "-").replace(/\.pdf$/i, "") + " - completed.pdf";
+          attachment = { filename, bytes: await original(path) };
+        }
+        const providerId = await sendNotification(token, notice.recipient, notice.subject, notice.message, notice.id, fetch, attachment);
         const { error } = await db.from("email_notifications").update({ status: "sent", sent_at: new Date().toISOString(), provider_id: providerId }).eq("id", notice.id).eq("attempts", notice.attempts);
         check(error);
       } catch {
         console.error("Notification delivery unconfirmed; queued for retry");
       }
-    }));
+    }
   } catch {
     console.error("Notification queue unavailable; signing state preserved");
   }
@@ -421,6 +433,19 @@ Deno.serve(async (request) => {
     )
       fail("Invalid document ID.");
     const doc = await documentFor(body.documentId, user.id);
+    if (body.action === "restore_draft") {
+      if (doc.status !== "draft" || typeof body.path !== "string" || !Number.isInteger(body.revision)) fail("Invalid draft restore.", 409);
+      if (typeof body.title !== "string" || !body.title.trim() || body.title.length > 200) fail("Invalid document filename.");
+      const { data: version, error } = await db.from("draft_pdf_versions").select("path").eq("document_id", doc.id).eq("path", body.path).maybeSingle();
+      check(error);
+      if (!version) fail("Unknown document version.", 409);
+      const pdf = await PDFDocument.load(await original(version.path));
+      const fields = validateFields(body.fields, pdf.getPageCount(), false);
+      if (fields.some((field) => !["company", "recipient"].includes(field.signer || ""))) fail("Invalid field signer.");
+      const result = await db.rpc("restore_draft", { p_document: doc.id, p_owner: user.id, p_expected_path: body.expectedPath, p_revision: body.revision, p_path: version.path, p_fields: fields, p_title: body.title.trim() });
+      if (result.error) fail("Document changed. Refresh before restoring.", 409);
+      return json({ ok: true });
+    }
     if (body.action === "save_draft") {
       if (doc.status !== "draft" || doc.original_path !== body.expectedPath)
         fail("Document changed. Refresh before saving.", 409);
@@ -508,11 +533,12 @@ Deno.serve(async (request) => {
         .update({ title: body.title.trim() })
         .eq("id", doc.id)
         .eq("status", "draft")
-        .select("id")
+        .eq("draft_revision", doc.draft_revision)
+        .select("draft_revision")
         .maybeSingle();
       check(error);
       if (!data) fail("Document changed. Refresh before renaming.", 409);
-      return json({ ok: true });
+      return json({ ok: true, revision: data.draft_revision });
     }
     if (body.action === "uploaded") {
       if (doc.status !== "uploading") fail("Document is already uploaded.");
@@ -543,7 +569,7 @@ Deno.serve(async (request) => {
         .order("created_at");
       check(error);
       return json({
-        capabilities: { pdfEditing: true, pdfPageRanges: true, draftAutosave: true },
+        capabilities: { pdfEditing: true, pdfPageRanges: true, draftAutosave: true, draftRestore: true },
         document: doc,
         audit: data,
         url:

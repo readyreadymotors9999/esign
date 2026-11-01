@@ -1734,3 +1734,17 @@ summary:focus-visible,
 .zoom-reset svg { display: block; }
 
 .draft-save-status.error { color: #a33228; }
+
+.draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid #dde7e5;
+  background: #f7faf9;
+}
+.draft-actions button { font-size: 12px; padding: 8px 12px; }
+.preview-pane { display: flex; flex-direction: column; }
+.preview-pane .document-scroll { flex: 1; height: auto; }
+.draft-actions { flex-shrink: 0; }

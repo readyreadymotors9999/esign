@@ -61,9 +61,42 @@ test('view notifications deduplicate per invitation; completion queues both part
   await db.exec(`select public.revoke_signing_session('${otherDoc}','${owner}')`);
   assert.equal((await db.query(`select viewed_at from public.documents where id='${otherDoc}'`)).rows[0].viewed_at,null);
   await assert.rejects(db.exec(`select public.mark_document_viewed('${ownerSession}')`));
+  await db.exec(`update public.documents set title='Changed',original_path='revision.pdf',fields='[{"page":1,"x":0.1}]' where id='${otherDoc}'`);
+  let revision=(await db.query(`select draft_revision from public.documents where id='${otherDoc}'`)).rows[0].draft_revision;
+  await assert.rejects(db.exec(`select public.restore_draft('${otherDoc}','${owner}','revision.pdf',${revision},'original.pdf','[]','Owner test')`));
+  await db.exec(`select public.restore_draft('${otherDoc}','${owner}','revision.pdf',${revision},'other.pdf','[]','Owner test')`);
+  let restored=(await db.query(`select * from public.documents where id='${otherDoc}'`)).rows[0];
+  assert.equal(restored.title,'Owner test');assert.deepEqual(restored.fields,[]);assert.equal(restored.original_path,'other.pdf');
+  assert.equal(restored.draft_revision,revision+1);
+  await assert.rejects(db.exec(`select public.restore_draft('${otherDoc}','${owner}','other.pdf',${revision},'other.pdf','[]','Stale')`));
+  await assert.rejects(db.exec(`select public.restore_draft('${doc}','${owner}','original.pdf',0,'original.pdf','[]','Cannot edit completed')`));
+  const aliceSession='77777777-7777-4777-8777-777777777777';
+  await db.exec(`update public.documents set status='sent',title='Lease Alice',recipient_name='Alice Chen' where id='${otherDoc}';
+   insert into public.signing_sessions(id,document_id,recipient_email,token_hash,expires_at) values('${aliceSession}','${otherDoc}','alice@example.com','alice-hash',now()+interval '1 day');
+   select public.mark_document_viewed('${aliceSession}');`);
+  assert.equal((await db.query(`select subject from public.email_notifications where session_id='${aliceSession}'`)).rows[0].subject,'Alice Chen has viewed the document "Lease Alice"');
   await db.exec('set role anon');
   await assert.rejects(db.exec('select * from public.email_notifications'));
   await assert.rejects(db.exec(`select public.mark_document_viewed('${session}')`));
   await assert.rejects(db.exec('select * from public.claim_email_notifications(null)'));
+  await assert.rejects(db.exec(`select public.restore_draft('${otherDoc}','${owner}','other.pdf',0,'other.pdf','[]','Forbidden')`));
  } finally {await db.close();}
+});
+
+test('completion email MIME carries the exact signed PDF and a safe Unicode filename', async () => {
+ const bytes=new Uint8Array([37,80,68,70,45,0,255,13,10,128]);
+ const attachment={filename:'寄卖合同 - Junjie Wu - completed.pdf',bytes};
+ const raw=notificationRaw('signer@example.com','Completed','All participants signed.','attachment-test',attachment);
+ const mime=Buffer.from(raw,'base64url').toString();
+ assert.match(mime,/Content-Type: multipart\/mixed/);
+ assert.match(mime,/Content-Type: application\/pdf/);
+ assert.ok(mime.includes(encodeURIComponent(attachment.filename)));
+ const encoded=mime.split('Content-Transfer-Encoding: base64\r\n\r\n')[2].split('\r\n--')[0];
+ assert.deepEqual(new Uint8Array(Buffer.from(encoded,'base64')),bytes);
+ await sendNotification('token','signer@example.com','Completed','All participants signed.','attachment-test',async(_,init)=>{
+   assert.match(Buffer.from(JSON.parse(init.body).raw,'base64url').toString(),/application\/pdf/);
+   return new Response(JSON.stringify({id:'attachment-id'}));
+ },attachment);
+ const viewed=Buffer.from(notificationRaw('owner@example.com','Viewed','Viewed','view-test'),'base64url').toString();
+ assert.ok(!viewed.includes('application/pdf'));
 });

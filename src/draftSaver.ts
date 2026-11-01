@@ -20,6 +20,7 @@ export class DraftSaver {
     this.status = status;
     this.saved = this.latest = JSON.stringify(initial);
   }
+  get revisionValue() { return this.revision; }
   get dirty() { return this.latest !== this.saved || !!this.running || !!this.failure; }
   update(fields: unknown) {
     this.latest = JSON.stringify(fields);

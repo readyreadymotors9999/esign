@@ -122,6 +122,14 @@ test.describe("High density PDF preview", () => {
           uploaded = true;
           return r.fulfill({ json: { ok: true } });
         }
+        if (b.action === "restore_draft") {
+          expect(b.revision).toBe(doc.draft_revision);
+          doc.fields = b.fields;
+          doc.title = b.title;
+          doc.original_path = b.path;
+          doc.draft_revision++;
+          return r.fulfill({ json: { ok: true } });
+        }
         if (b.action === "save_draft") {
           expect(b.revision).toBe(doc.draft_revision);
           doc.fields = b.fields;
@@ -131,7 +139,7 @@ test.describe("High density PDF preview", () => {
         if (b.action === "detail")
           return r.fulfill({
             json: {
-              capabilities: { draftAutosave: true },
+              capabilities: { draftAutosave: true, draftRestore: true },
               document: doc,
               url: "/fixture.pdf",
               audit: sent
@@ -280,6 +288,17 @@ test.describe("High density PDF preview", () => {
       await expect(page.getByTestId("field-placement-preview")).toHaveCount(0);
       await expect(page.getByText("Draft saved", { exact: true })).toBeVisible();
       expect(doc.fields).toHaveLength(1);
+      await page.getByRole("button", { name: "Undo draft edit", exact: true }).click();
+      await expect(page.locator(".field")).toHaveCount(0);
+      await page.getByRole("button", { name: "Redo draft edit", exact: true }).click();
+      await expect(page.locator(".field")).toHaveCount(1);
+      page.once("dialog", dialog => dialog.accept());
+      await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await expect(page.locator(".field")).toHaveCount(0);
+      expect(doc.fields).toHaveLength(0);
+      await page.getByRole("button", { name: "Redo draft edit", exact: true }).click();
+      await expect(page.locator(".field")).toHaveCount(1);
+
       await page.reload();
       await page.getByRole("button", { name: /PDF Custom agreement.pdf/ }).click();
       await expect(page.locator(".field")).toHaveCount(1);

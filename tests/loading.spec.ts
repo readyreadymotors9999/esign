@@ -238,3 +238,30 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
   );
   await expect.poll(() => workerRequests).toBe(2);
 });
+
+test("completed signing automatically moves the document out of Waiting for others", async ({ page }) => {
+  const doc = { id: "33333333-3333-4333-8333-333333333333", title: "Completed agreement", status: "sent", created_at: new Date().toISOString() };
+  await page.clock.install();
+  await page.addInitScript(() => localStorage.setItem("sb-test-auth-token", JSON.stringify({
+    access_token: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.fake", refresh_token: "test", expires_at: Math.floor(Date.now()/1000)+3600, token_type: "bearer",
+    user: { id: "test", email: "readyreadymotors9999@gmail.com", aud: "authenticated" },
+  })));
+  await page.route("https://test.supabase.co/**", async route => {
+    if (route.request().url().includes("/rest/v1/documents")) return route.fulfill({json:[doc]});
+    return route.fulfill({json:{recipients:[]}});
+  });
+  await page.goto("/");
+  const waiting=page.getByRole("tab", {name:/Waiting for others/});
+  const completed=page.getByRole("tab", {name:/Completed/});
+  await expect(waiting.locator(".count")).toHaveText("1");
+  await waiting.click();
+  await expect(page.locator(".doc-row")).toHaveCount(1);
+  doc.status="completed";
+  await page.clock.fastForward(15000);
+  await expect(waiting.locator(".count")).toHaveText("0");
+  await expect(completed.locator(".count")).toHaveText("1");
+  await expect(page.locator(".doc-row")).toHaveCount(0);
+  await completed.click();
+  await expect(page.locator(".doc-row")).toContainText("Completed agreement");
+  await expect(page.locator(".doc-row .badge")).toHaveText("completed");
+});

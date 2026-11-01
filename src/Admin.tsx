@@ -8,6 +8,7 @@ import {
   type Field,
 } from "./api";
 import { PdfPreview as Pdf, prefetchPdfPreview } from "./PdfPreview";
+import { DraftHistory } from "./draftHistory";
 import { DraftSaver } from "./draftSaver";
 import { Loading } from "./Loading";
 import { createPortal } from "react-dom";
@@ -21,6 +22,7 @@ type Recipient = {
   first_name: string;
   last_name: string;
 };
+type DraftSnapshot = { path: string; title: string; fields: Field[] };
 function documentStatus(document: DocumentSummary) {
   return document.status === "sent" && document.viewed_at ? "viewed" : document.status;
 }
@@ -95,7 +97,7 @@ export default function Admin({
       return;
     }
     const document = selected;
-    const saver = new DraftSaver(document.fields, document.draft_revision || 0,
+    const saver = new DraftSaver(fields, document.draft_revision || 0,
       async (fields, revision) => {
         const result = await api("save_draft", { documentId: document.id, expectedPath: document.original_path, fields, revision });
         return result.revision;
@@ -114,6 +116,61 @@ export default function Admin({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, []);
+  const [restoreAvailable, setRestoreAvailable] = useState(false);
+  const history = useRef<{ id: string; entries: DraftHistory<DraftSnapshot>; contact: { email: string; first: string; last: string; recipientId: string; delivery: "email" | "share" } } | undefined>(undefined);
+  const skipHistory = useRef(false);
+  const [, updateHistory] = useState(0);
+  function currentSnapshot(): DraftSnapshot | undefined {
+    return selected ? { path: selected.original_path, title: selected.title, fields } : undefined;
+  }
+  useEffect(() => {
+    if (selected?.status !== "draft") { history.current = undefined; return; }
+    const snapshot = { path: selected.original_path, title: selected.title, fields };
+    if (history.current?.id !== selected.id) {
+      history.current = { id: selected.id, entries: new DraftHistory(snapshot), contact: { email, first, last, recipientId, delivery } };
+      updateHistory(value => value + 1);
+      return;
+    }
+    if (skipHistory.current) { skipHistory.current = false; return; }
+    // Coalesce pointer movements into a single undo step.
+    const timer = setTimeout(() => {
+      if (history.current?.entries.record(snapshot)) updateHistory(value => value + 1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [selected?.id, selected?.status, selected?.original_path, selected?.title, fields]);
+  async function restoreHistory(operation: "undo" | "redo" | "discard") {
+    const session = history.current;
+    const snapshot = currentSnapshot();
+    if (!session || !snapshot || !selected) return;
+    session.entries.record(snapshot);
+    const index = operation === "discard" ? 0 : session.entries.index + (operation === "undo" ? -1 : 1);
+    const target = session.entries.at(index);
+    await draftSaver.current?.flush();
+    await api("restore_draft", { documentId: selected.id, expectedPath: selected.original_path, revision: draftSaver.current?.revisionValue ?? selected.draft_revision ?? 0, ...target });
+    session.entries.index = index;
+    skipHistory.current = true;
+    await show(selected.id);
+    if (operation === "discard") {
+      setEmail(session.contact.email); setFirst(session.contact.first); setLast(session.contact.last);
+      setRecipientId(session.contact.recipientId); setDelivery(session.contact.delivery);
+    }
+    updateHistory(value => value + 1);
+    await refresh();
+    setMessage(operation === "discard" ? "Restored the draft to when you opened this editor. Previously autosaved edits were reverted." : "Draft restored and saved. Apply your signature again before sending.");
+  }
+  async function saveDraftNow() {
+    await draftSaver.current?.flush();
+    if (selected && rename.trim() !== selected.title) {
+      const result = await api("rename", { documentId: selected.id, title: rename });
+      setSelected({ ...selected, title: rename.trim(), fields, draft_revision: result.revision ?? selected.draft_revision });
+      await refresh();
+    }
+    setMessage("Draft saved. Field layout and filename are saved; apply your signature again when reopening.");
+  }
+  const pendingHistory = !!selected && !!history.current && JSON.stringify(currentSnapshot()) !== JSON.stringify(history.current.entries.current);
+  const canUndo = pendingHistory || !!history.current?.entries.canUndo;
+  const canRedo = !pendingHistory && !!history.current?.entries.canRedo;
+  const canDiscard = !!history.current && (JSON.stringify(currentSnapshot()) !== JSON.stringify(history.current.entries.initial) || !!signature || dateApplied || rename !== selected?.title || email !== history.current.contact.email || first !== history.current.contact.first || last !== history.current.contact.last || recipientId !== history.current.contact.recipientId || delivery !== history.current.contact.delivery);
   const today = useSigningDate();
   const detailRequest = useRef(0);
   const listRequest = useRef(0);
@@ -170,6 +227,19 @@ export default function Admin({
     const id = setTimeout(warm, 600);
     return () => clearTimeout(id);
   }, [docsLoaded]);
+  useEffect(() => {
+    if (!docs.some(document => document.status === "sent")) return;
+    const update = () => {
+      if (!document.hidden && !busy) void refresh(true).catch(() => {});
+    };
+    const timer = setInterval(update, 15000);
+    document.addEventListener("visibilitychange", update);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", update); };
+  }, [docs, busy]);
+  useEffect(() => {
+    if (selected?.status === "sent" && docs.some(document => document.id === selected.id && document.status === "completed"))
+      void show(selected.id).catch(error => setMessage(error.message));
+  }, [docs, selected?.id, selected?.status]);
   async function refreshRecipients() {
     const data = await api("recipients");
     setRecipients(data.recipients);
@@ -197,6 +267,7 @@ export default function Admin({
     try {
       const data = await api("detail", { documentId: id });
       if (request !== detailRequest.current) return false;
+      setRestoreAvailable(data.capabilities?.draftRestore === true);
       setAutosaveAvailable(data.capabilities?.draftAutosave === true);
       setEditingAvailable(data.capabilities?.pdfEditing === true);
       setPageRangesAvailable(data.capabilities?.pdfPageRanges === true);
@@ -557,12 +628,7 @@ export default function Admin({
                       onSubmit={(e) => {
                         e.preventDefault();
                         void task(async () => {
-                          await api("rename", {
-                            documentId: selected.id,
-                            title: rename,
-                          });
-                          setSelected({ ...selected, title: rename.trim() });
-                          await refresh();
+                          await saveDraftNow();
                           setMessage("Document filename updated.");
                         });
                       }}
@@ -812,6 +878,17 @@ export default function Admin({
                 }}
               />
               <div className="preview-pane">
+                {selected.status === "draft" && (
+                  <div className="draft-actions" role="toolbar" aria-label="Draft editing actions">
+                    <button type="button" className="secondary" title="Undo" aria-label="Undo draft edit" disabled={busy || !restoreAvailable || !canUndo} onClick={() => void task(() => restoreHistory("undo"))}>↶</button>
+                    <button type="button" className="secondary" title="Redo" aria-label="Redo draft edit" disabled={busy || !restoreAvailable || !canRedo} onClick={() => void task(() => restoreHistory("redo"))}>↷</button>
+                    <button type="button" className="secondary" disabled={busy || !restoreAvailable || !canDiscard} onClick={() => {
+                      if (window.confirm("Discard all document edits since you opened this editor, including changes already autosaved?")) void task(() => restoreHistory("discard"));
+                    }}>Discard changes</button>
+                    <button type="button" disabled={busy || !autosaveAvailable} onClick={() => void task(saveDraftNow)}>Save draft</button>
+                  </div>
+                )}
+
                 <div className="document-scroll">
                   {url && (
                     <Pdf
