@@ -78,16 +78,14 @@ function App() {
             <small>by Ready Ready Motors, Inc.</small>
           </span>
         </a>
-        <span className="header-note">Secure electronic signatures</span>
         {session && !token && (
           <div className="account-actions">
             <a
               href="#/settings"
               className="button secondary"
-              aria-label="Account settings"
+              aria-label="My Account"
             >
-              <span className="settings-label-full">Account settings</span>
-              <span className="settings-label-short">Settings</span>
+              My Account
             </a>
             <button
               className="secondary"

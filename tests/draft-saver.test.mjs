@@ -58,3 +58,23 @@ test('undoing a field during an in-flight save remains dirty until the undo is p
  assert.deepEqual(writes,[[1],[]]);
  assert.equal(saver.dirty,false);
 });
+
+test('autosave waits two quiet seconds and reports success only for automatic writes', async (t) => {
+ t.mock.timers.enable({apis:['setTimeout']});
+ let writes=0, notices=0;
+ const saver=new DraftSaver([],0,async(_,revision)=>{writes++;return revision+1;},()=>{},()=>notices++);
+ assert.equal(notices,0);
+ saver.update([1]);
+ t.mock.timers.tick(1500);
+ saver.update([2]);
+ t.mock.timers.tick(1999);
+ assert.equal(writes,0);
+ t.mock.timers.tick(1);
+ await saver.flush();
+ assert.equal(writes,1);
+ assert.equal(notices,1);
+ saver.update([3]);
+ await saver.flush();
+ assert.equal(writes,2);
+ assert.equal(notices,1);
+});

@@ -203,10 +203,10 @@ test("document counts stay unknown until loaded, refresh preserves rows, and PDF
     .click();
 
   await page
-    .getByRole("link", { name: "Account settings", exact: true })
+    .getByRole("link", { name: "My Account", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Account settings", exact: true }),
+    page.getByRole("heading", { name: "My Account", exact: true }),
   ).toBeVisible();
   let settingsRelease!: () => void;
   listGate = new Promise<void>((resolve) => (settingsRelease = resolve));

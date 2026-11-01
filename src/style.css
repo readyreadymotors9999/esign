@@ -1581,17 +1581,6 @@ body:has(.document-open) footer {
 .account-actions button {
   white-space: nowrap;
 }
-.settings-label-short {
-  display: none;
-}
-@media (max-width: 700px) {
-  .settings-label-full {
-    display: none;
-  }
-  .settings-label-short {
-    display: inline;
-  }
-}
 .loading-state {
   display: flex;
   align-items: center;
@@ -1748,3 +1737,33 @@ summary:focus-visible,
 .preview-pane { display: flex; flex-direction: column; }
 .preview-pane .document-scroll { flex: 1; height: auto; }
 .draft-actions { flex-shrink: 0; }
+
+.autosave-toast {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 150;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+  max-width: calc(100vw - 32px);
+  border: 1px solid #ffffff66;
+  border-radius: 12px;
+  background: #203f38d6;
+  color: #fff;
+  box-shadow: 0 6px 24px #18342a26;
+  backdrop-filter: blur(8px);
+  font-size: 14px;
+  font-weight: 500;
+  animation: autosave-appear 140ms ease-out;
+}
+@keyframes autosave-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .autosave-toast { animation: none; }
+}

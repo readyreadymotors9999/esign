@@ -43,7 +43,7 @@ export default function AccountSettings() {
     <section className="account-settings">
       <div className="heading">
         <div>
-          <h1>Account settings</h1>
+          <h1>My Account</h1>
           <p>Manage your private recipient address book.</p>
         </div>
         <a href="#/" className="button secondary">

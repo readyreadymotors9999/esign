@@ -90,6 +90,13 @@ export default function Admin({
   }, [recipientEditor]);
   const [autosaveAvailable, setAutosaveAvailable] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
+  const [autosaveToast, setAutosaveToast] = useState(false);
+  const autosaveToastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    setAutosaveToast(false);
+    clearTimeout(autosaveToastTimer.current);
+    return () => clearTimeout(autosaveToastTimer.current);
+  }, [selected?.id, selected?.status]);
   const draftSaver = useRef<DraftSaver | undefined>(undefined);
   useEffect(() => {
     if (selected?.status !== "draft" || !autosaveAvailable) {
@@ -103,6 +110,12 @@ export default function Admin({
         return result.revision;
       },
       (status) => { if (draftSaver.current === saver) setSaveStatus(status); },
+      () => {
+        if (draftSaver.current !== saver) return;
+        clearTimeout(autosaveToastTimer.current);
+        setAutosaveToast(true);
+        autosaveToastTimer.current = setTimeout(() => setAutosaveToast(false), 1600);
+      },
     );
     draftSaver.current = saver;
     setSaveStatus("Draft saved");
@@ -357,6 +370,11 @@ export default function Admin({
     );
   return (
     <div className={`admin-workspace ${selected ? "document-open" : ""}`}>
+      {autosaveToast && selected?.status === "draft" && (
+        <div className="autosave-toast" role="status" aria-live="polite">
+          <span aria-hidden="true">✓</span> <span>Draft autosaved</span>
+        </div>
+      )}
       {showSignature && (
         <SignatureDialog
           name="Lichen Wang"
@@ -884,7 +902,7 @@ export default function Admin({
                     <button type="button" className="secondary" title="Redo" aria-label="Redo draft edit" disabled={busy || !restoreAvailable || !canRedo} onClick={() => void task(() => restoreHistory("redo"))}>↷</button>
                     <button type="button" className="secondary" disabled={busy || !restoreAvailable || !canDiscard} onClick={() => {
                       if (window.confirm("Discard all document edits since you opened this editor, including changes already autosaved?")) void task(() => restoreHistory("discard"));
-                    }}>Discard changes</button>
+                    }}>Discard all changes</button>
                     <button type="button" disabled={busy || !autosaveAvailable} onClick={() => void task(saveDraftNow)}>Save draft</button>
                   </div>
                 )}

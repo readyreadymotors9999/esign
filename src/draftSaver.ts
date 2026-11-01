@@ -9,15 +9,18 @@ export class DraftSaver {
   private revision: number;
   private write: (fields: any[], revision: number) => Promise<number>;
   private status: (value: string) => void;
+  private onAutosaved?: () => void;
   constructor(
     initial: unknown,
     revision: number,
     write: (fields: any[], revision: number) => Promise<number>,
     status: (value: string) => void,
+    onAutosaved?: () => void,
   ) {
     this.revision = revision;
     this.write = write;
     this.status = status;
+    this.onAutosaved = onAutosaved;
     this.saved = this.latest = JSON.stringify(initial);
   }
   get revisionValue() { return this.revision; }
@@ -28,11 +31,11 @@ export class DraftSaver {
     if (!this.dirty) return;
     if (this.failure) { this.status(`Draft not saved: ${this.failure.message}`); return; }
     this.status("Saving draft…");
-    this.timer = setTimeout(() => { void this.flush().catch(() => {}); }, 600);
+    this.timer = setTimeout(() => { void this.flush(true).catch(() => {}); }, 2000);
   }
-  async flush(): Promise<void> {
+  async flush(automatic = false): Promise<void> {
     clearTimeout(this.timer);
-    if (this.running) { await this.running; return this.flush(); }
+    if (this.running) { await this.running; return this.flush(automatic); }
     if (this.failure) throw this.failure;
     if (!this.dirty) return;
     this.running = (async () => {
@@ -42,6 +45,7 @@ export class DraftSaver {
         this.saved = snapshot;
       }
       this.status("Draft saved");
+      if (automatic) this.onAutosaved?.();
     })();
     try { await this.running; }
     catch (error) {

@@ -213,7 +213,7 @@ test.describe("High density PDF preview", () => {
       await page
         .getByRole("button", { name: "Upload & prepare", exact: true })
         .click();
-      await expect(page.getByRole("status")).toContainText("PDF uploaded");
+      await expect(page.locator(".notice[role=status]")).toContainText("PDF uploaded");
       await expect(page.locator(".pdf-page")).toHaveCount(2);
       await expect
         .poll(() =>
@@ -288,12 +288,20 @@ test.describe("High density PDF preview", () => {
       await expect(page.getByTestId("field-placement-preview")).toHaveCount(0);
       await expect(page.getByText("Draft saved", { exact: true })).toBeVisible();
       expect(doc.fields).toHaveLength(1);
+      const autosaveNotice = page.getByText("Draft autosaved", { exact: true });
+      await expect(autosaveNotice).toBeVisible();
+      const noticeBox = (await page.locator(".autosave-toast").boundingBox())!;
+      const viewport = page.viewportSize()!;
+      expect(Math.abs(noticeBox.x + noticeBox.width / 2 - viewport.width / 2)).toBeLessThanOrEqual(1);
+      expect(Math.abs(noticeBox.y + noticeBox.height / 2 - viewport.height / 2)).toBeLessThanOrEqual(1);
+      await expect(autosaveNotice).toHaveCount(0);
+
       await page.getByRole("button", { name: "Undo draft edit", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(0);
       await page.getByRole("button", { name: "Redo draft edit", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(1);
       page.once("dialog", dialog => dialog.accept());
-      await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await page.getByRole("button", { name: "Discard all changes", exact: true }).click();
       await expect(page.locator(".field")).toHaveCount(0);
       expect(doc.fields).toHaveLength(0);
       await page.getByRole("button", { name: "Redo draft edit", exact: true }).click();
@@ -542,7 +550,7 @@ test.describe("High density PDF preview", () => {
         await page
           .getByRole("button", { name: "Save recipient", exact: true })
           .click();
-        await expect(page.getByRole("status")).toContainText("Recipient saved");
+        await expect(page.locator(".notice[role=status]")).toContainText("Recipient saved");
         await expect(page.getByLabel("Recipient first name")).toHaveCount(0);
         await expect(
           page
@@ -560,7 +568,7 @@ test.describe("High density PDF preview", () => {
         await page
           .getByRole("button", { name: "Update recipient", exact: true })
           .click();
-        await expect(page.getByRole("status")).toContainText("Recipient saved");
+        await expect(page.locator(".notice[role=status]")).toContainText("Recipient saved");
       }
       await page.getByLabel("Invitation delivery").selectOption(delivery);
       await page
@@ -585,7 +593,7 @@ test.describe("High density PDF preview", () => {
       await page
         .getByRole("button", { name: "Edit document & resend" })
         .click();
-      await expect(page.getByRole("status")).toContainText(
+      await expect(page.locator(".notice[role=status]")).toContainText(
         "All signatures and dates cleared",
       );
       await expect(page.locator(".field-content img")).toHaveCount(0);
@@ -798,7 +806,7 @@ test("Google Docs import uses OAuth export and a custom filename", async ({
   await page
     .getByRole("button", { name: "Authorize & import PDF", exact: true })
     .click();
-  await expect(page.getByRole("status")).toContainText("PDF uploaded");
+  await expect(page.locator(".notice[role=status]")).toContainText("PDF uploaded");
   expect(exported).toBe(true);
   expect(uploaded).toBe(true);
 });
@@ -1002,7 +1010,7 @@ for (const viewport of [
     await page.getByLabel("Selected page").selectOption("1");
     await page.getByRole("button", { name: "Delete selected page" }).click();
     await expect(page.locator(".pdf-page")).toHaveCount(1);
-    await expect(page.getByRole("status")).toContainText("PDF updated");
+    await expect(page.locator(".notice[role=status]")).toContainText("PDF updated");
     await expect(page.locator(".field")).toHaveCount(1);
     expect(doc.fields[0].page).toBe(1);
     await page.getByLabel("Append PDF", { exact: true }).setInputFiles({

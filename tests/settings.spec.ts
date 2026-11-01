@@ -83,10 +83,10 @@ test("logo always returns home and account settings manage saved recipients", as
     page.getByRole("heading", { name: "Welcome back, Lichen" }),
   ).toBeVisible();
   await page
-    .getByRole("link", { name: "Account settings", exact: true })
+    .getByRole("link", { name: "My Account", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Account settings", exact: true }),
+    page.getByRole("heading", { name: "My Account", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".recipient-row")).toHaveCount(1);
   await page
