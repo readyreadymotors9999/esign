@@ -207,6 +207,30 @@ export default function Admin({
     showCenteredNotice("Document saved");
     setMessage("Draft saved. Field layout and filename are saved; apply your signature again when reopening.");
   }
+  async function removeDocumentSigner(id: string) {
+    const signer = documentSigners.find(value => value.id === id);
+    if (!signer || !selected || selected.status !== "draft" || busy) return;
+    if (!window.confirm(`Remove ${signer.name} and all their assigned fields from this document? Their saved contact will remain.`)) return;
+    const nextFields = fields.filter(field => field.signer !== id);
+    const nextSigners = documentSigners.filter(value => value.id !== id);
+    try {
+      if (draftSaver.current) {
+        draftSaver.current.update({ fields: nextFields, signers: nextSigners });
+        await draftSaver.current.retry();
+      } else {
+        const saved = await api("save_draft", { documentId: selected.id, expectedPath: selected.original_path, revision: selected.draft_revision || 0, fields: nextFields, signers: nextSigners });
+        const confirmed = await confirmSignerRoster(selected.id, nextSigners, saved.revision);
+        setSelected({ ...selected, fields: nextFields, signers: nextSigners, draft_revision: confirmed.document.draft_revision });
+      }
+      const removedKeys = new Set(fields.filter(field => field.signer === id).map(signatureFieldKey));
+      setAppliedSignatures(current => new Set([...current].filter(key => !removedKeys.has(key))));
+      setFields(nextFields); setDocumentSigners(nextSigners); setRecipientEditor(false);
+      showCenteredNotice("Signer removed");
+    } catch (error) {
+      draftSaver.current?.update({ fields, signers: documentSigners });
+      throw error;
+    }
+  }
   const pendingHistory = !!selected && !!history.current && JSON.stringify(currentSnapshot()) !== JSON.stringify(history.current.entries.current);
   const canUndo = pendingHistory || !!history.current?.entries.canUndo;
   const canRedo = !pendingHistory && !!history.current?.entries.canRedo;
@@ -870,15 +894,9 @@ export default function Admin({
                       {documentSigners.some(signer => signer.email === email.trim().toLowerCase()) && (
                         <button type="button" className="secondary danger-link" disabled={busy} onClick={() => {
                           const signer = documentSigners.find(signer => signer.email === email.trim().toLowerCase());
-                          if (!signer || !window.confirm(`Remove ${signer.name} and their assigned fields from this document?`)) return;
-                          setFields(current => current.filter(field => field.signer !== signer.id));
-                          setDocumentSigners(current => current.filter(value => value.id !== signer.id));
-                          setRecipientEditor(false);
+                          if (signer) void task(() => removeDocumentSigner(signer.id));
                         }}>Remove signer from document</button>
                       )}
-                      <small className="block">
-                        Only people explicitly added here appear in this document’s signer list. Saved contacts are not added automatically.
-                      </small>
                     </section>,
                     recipientHost,
                   )}
@@ -1098,6 +1116,7 @@ export default function Admin({
                       onChangeSignature={(_, field) => { setSignatureTarget(signatureFieldKey(field)); setShowSignature(true); }}
                       signerNames={Object.fromEntries([["company", "Lichen Wang"], ...documentSigners.map(signer => [signer.id, signer.name])])}
                       onRecipientHost={setRecipientHost}
+                      onRemoveSigner={id => void task(() => removeDocumentSigner(id))}
                       onChooseRecipient={(id) => {
                         setRecipientMode(id === "__new" ? "new" : "saved");
                         setSignerAddError("");

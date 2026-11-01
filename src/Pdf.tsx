@@ -49,6 +49,7 @@ export function Pdf({
   datePreviews = {},
   signerNames = {},
   onChooseRecipient,
+  onRemoveSigner,
   onRecipientHost,
   zoomHost,
   appliedSignatureFields,
@@ -61,6 +62,7 @@ export function Pdf({
   onRecipientHost?: (host: HTMLDivElement | null) => void;
   zoomHost?: HTMLElement | null;
   onChooseRecipient?: (id?: string) => void;
+  onRemoveSigner?: (id: string) => void;
   cacheKey?: string;
   url: string;
   fields: Field[];
@@ -274,6 +276,7 @@ export function Pdf({
         </select>
       </label>
       {signer !== "company" && signerNames[signer] && (
+        <div className="selected-signer-actions">
         <button
           type="button"
           className="secondary edit-selected-recipient"
@@ -284,6 +287,8 @@ export function Pdf({
         >
           Edit signer
         </button>
+        {onRemoveSigner && <button type="button" className="secondary remove-selected-signer" disabled={busy} onClick={() => { cancelPlacement(); onRemoveSigner(signer); }}>Remove signer</button>}
+        </div>
       )}
       <div className="signer-recipient-editor" ref={onRecipientHost} />
       <span>Place field</span>

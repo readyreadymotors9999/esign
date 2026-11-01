@@ -1828,3 +1828,6 @@ summary:focus-visible,
 .selected-recipient-summary span { overflow-wrap: anywhere; }
 .selected-recipient-summary span { color: #60766d; font-size: 12px; }
 .selected-recipient-summary button { margin-left: auto; }
+
+.selected-signer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.selected-signer-actions .remove-selected-signer { color: #a33228; }
