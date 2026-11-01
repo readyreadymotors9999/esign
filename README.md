@@ -464,3 +464,12 @@ When the Edge Function does not advertise `documentSigners`, the add-signer butt
 
 
 Saved-recipient selection now shows only the selector, a contact summary, **Edit**, and **Add as signer**. Name/email inputs appear only for Add new signer or explicit Edit. The add action no longer disables itself solely because a legacy/missing capability flag is false. It attempts the real save and reads the document back; unconfirmed/ignored roster writes stay visibly unsaved and keep the editor open with the actual error. Draft saves verify roster persistence and revision before reporting success. This frontend compatibility fix requires no new migration or Edge Function deployment.
+
+
+### Repair confirmed missing document signer storage
+
+Live zero-row schema checks and the owner's information_schema query confirmed that `documents.draft_revision` exists but `documents.signers`, `active_batch`, `working_path`, and `signed_signer_ids` were missing. Saved recipients are stored separately; their presence does not create a document signer roster.
+
+Migration `202611010004_repair_document_signers.sql` repairs the signer columns/functions/indexes/triggers idempotently, including databases whose earlier signer migration was marked applied without the expected structure. It preserves existing signer batches when rerun. Apply it with the usual db push from the updated backend source; the matching `esign` function must also be deployed. The frontend no longer shows a generic deployment banner, and failed additions no longer mutate the displayed document roster or switch the action to Update/Remove.
+
+The deployment handoff includes a fresh backend ZIP for owners who download source rather than maintain a Git checkout. Extract into a new folder and run the existing three Supabase commands there. Do not reuse an older extracted folder. This repair is covered by a test that starts with only draft_revision (no signer columns), applies the repair, opens a multi-signer batch, and reruns the repair without changing that batch.

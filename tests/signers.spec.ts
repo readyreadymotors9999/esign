@@ -99,5 +99,9 @@ test("document signer roster excludes unselected contacts and signatures apply o
   await expect(page.getByLabel("Manage recipient",{exact:true})).toBeVisible();
   await expect(page.getByText(/^Draft not saved:/)).toBeVisible();
   expect(doc.signers.some((signer:any)=>signer.email==="carol@example.com")).toBe(false);
+  await expect(page.getByRole("button",{name:"Add as signer",exact:true})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Remove signer from document",exact:true})).toHaveCount(0);
+  await expect(page.getByLabel("Field signer",{exact:true})).not.toContainText("Carol");
+  await expect(page.getByText("Deploy the document signer backend update before sending invitations.",{exact:true})).toHaveCount(0);
 
 });

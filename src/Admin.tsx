@@ -839,7 +839,6 @@ export default function Admin({
                             const existing = documentSigners.find(signer => signer.email === normalizedEmail || signer.recipientId === saved.recipient.id);
                             const signer = { id: existing?.id || (documentSigners.length === 0 ? "recipient" : crypto.randomUUID()), recipientId: saved.recipient.id, email: normalizedEmail, name: `${first} ${last}`.trim() || normalizedEmail };
                             const nextSigners = existing ? documentSigners.map(value => value.id === existing.id ? signer : value) : [...documentSigners, signer];
-                            setDocumentSigners(nextSigners);
                             if (draftSaver.current) {
                               draftSaver.current.update({ fields, signers: nextSigners });
                               await draftSaver.current.retry();
@@ -849,8 +848,9 @@ export default function Admin({
                               setAutosaveAvailable(true);
                               setSelected({ ...selected, fields, signers: nextSigners, draft_revision: confirmed.document.draft_revision });
                             }
+                            setDocumentSigners(nextSigners);
                             setSignersAvailable(true);
-                            await refreshRecipients();
+                            await refreshRecipients().catch(() => {});
                             setRecipientEditor(false);
                             setMessage(
                               "Recipient added as a signer for this document.",
@@ -858,6 +858,7 @@ export default function Admin({
                             } catch (error) {
                               const message = error instanceof Error ? error.message : "Unable to add signer.";
                               setSignerAddError(message);
+                              draftSaver.current?.update({ fields, signers: documentSigners });
                               throw error;
                             }
                           })
@@ -890,7 +891,6 @@ export default function Admin({
                       if (ready) void task(send);
                     }}
                   >
-                    {!signersAvailable && <p className="notice">Deploy the document signer backend update before sending invitations.</p>}
                     <h3>Company signer</h3>
                     <div className="signer-profile">
                       <strong>Lichen Wang</strong>

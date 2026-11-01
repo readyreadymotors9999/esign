@@ -68,3 +68,30 @@ test('multi-signer sessions serialize final PDFs and notify all participants onl
   await assert.rejects(issue(next,document.draft_revision));
  } finally {await db.close();}
 });
+
+test('repair migration restores missing signer schema and can be rerun without changing an active signer batch',async()=>{
+ const db=new PGlite();
+ try {
+  await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;
+   create schema auth;create schema storage;create table auth.users(id uuid primary key);
+   create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
+   create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+   create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text);alter table storage.objects enable row level security;
+   grant usage on schema public,auth,storage to anon,authenticated,service_role;`);
+  const directory=new URL('../supabase/migrations/',import.meta.url);
+  for(const file of (await readdir(directory)).filter(name=>name.endsWith('.sql')&&!name.includes('document_signers')).sort()) await db.exec(await readFile(new URL(file,directory),'utf8'));
+  const missing=(await db.query("select column_name from information_schema.columns where table_schema='public' and table_name='documents' and column_name in ('draft_revision','signers')")).rows;
+  assert.deepEqual(missing.map(row=>row.column_name),['draft_revision']);
+  const repair=await readFile(new URL('202611010004_repair_document_signers.sql',directory),'utf8');
+  await db.exec(repair);
+  await db.query('insert into auth.users values($1)',[owner]);
+  await db.query("insert into public.documents(id,owner_id,title,status,original_path,signers) values($1,$2,'Repair test','draft','original.pdf',$3)",[doc,owner,JSON.stringify(roster)]);
+  const sessions=roster.map((signer,index)=>({id:[alice,bob][index],signer_id:signer.id,email:signer.email,name:signer.name,hash:signer.id}));
+  await db.query("select public.issue_document_sessions($1,$2,0,'original.pdf','prepared.pdf',$3,$4,$5,$6,'share')",[doc,owner,JSON.stringify(fields),JSON.stringify(roster),JSON.stringify(sessions),JSON.stringify({signed_at:new Date().toISOString()})]);
+  const batch=(await db.query('select active_batch from public.documents')).rows[0].active_batch;
+  await db.exec(repair);
+  const repaired=(await db.query('select signers,active_batch from public.documents')).rows[0];
+  assert.deepEqual(repaired.signers,roster);assert.equal(repaired.active_batch,batch);
+  assert.equal((await db.query('select count(*)::int count from public.signing_sessions')).rows[0].count,2);
+ } finally {await db.close();}
+});
