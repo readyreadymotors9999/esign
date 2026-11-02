@@ -13,6 +13,7 @@ test('sent documents expose renewal only for unfinished signers and show a fresh
   const body=route.request().postDataJSON();
   if(body.action==='recipients')return route.fulfill({json:{recipients:[]}});
   if(body.action==='detail')return route.fulfill({json:{document:doc,audit:[],invitations,url:'/invitation.pdf',capabilities:{resendInvitation:true}}});
+  if(body.action==='download')return route.fulfill({json:{url:'/invitation.pdf'}});
   if(body.action==='resend_invitation'){
    expect(body.sessionId).not.toBe('signed');sends++;
    const invitation=invitations.find(item=>item.id===body.sessionId)!;
@@ -31,4 +32,10 @@ test('sent documents expose renewal only for unfinished signers and show a fresh
  await expect(cards.filter({hasText:'Waiting Person'})).toContainText('Awaiting signature');
  page.once('dialog',dialog=>dialog.accept());await page.getByRole('button',{name:'Create new 72-hour link',exact:true}).click();
  await expect(page.getByLabel('Renewed signing link',{exact:true})).toHaveValue('https://example.com/#/sign/fresh-share');expect(sends).toBe(2);
+ doc.status='completed';doc.title='租车合同 - Yitong Ma';
+ await page.goto('/');await page.getByRole('button',{name:/PDF 租车合同 - Yitong Ma/}).click();
+ const downloaded=page.waitForEvent('download');
+ await page.getByRole('button',{name:/Download signed PDF/}).click();
+ expect((await downloaded).suggestedFilename()).toBe('租车合同 - Yitong Ma.pdf');
+
 });

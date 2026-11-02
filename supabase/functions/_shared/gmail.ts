@@ -163,6 +163,22 @@ function encodedSubject(value: string) {
     words.push(`=?UTF-8?B?${base64Utf8(characters.slice(i, i + 12).join(""))}?=`);
   return words.join("\r\n ");
 }
+function attachmentNameParameter(key: string, filename: string) {
+  const encoded = encodeURIComponent(filename).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+  // Keep long Unicode filenames within MIME header line limits.
+  const tokens = encoded.match(/%[0-9A-F]{2}|./g) || [];
+  const parts: string[] = [];
+  let part = "";
+  for (const token of tokens) {
+    if (part.length + token.length > 60) { parts.push(part); part = ""; }
+    part += token;
+  }
+  parts.push(part);
+  const extended = parts.length === 1
+    ? `${key}*=UTF-8''${parts[0]}`
+    : parts.map((value, index) => `${key}*${index}*=${index === 0 ? "UTF-8''" : ""}${value}`).join(";\r\n ");
+  return `${key}="${encodedSubject(filename)}";\r\n ${extended}`;
+}
 // One notification per recipient; names/titles are encoded, never raw MIME headers.
 export type PdfAttachment = { filename: string; bytes: Uint8Array };
 export function notificationRaw(email: string, subject: string, message: string, id: string, attachment?: PdfAttachment) {
@@ -182,8 +198,8 @@ export function notificationRaw(email: string, subject: string, message: string,
     '', lines64(base64Utf8(message)), '',
     ...(attachment ? [
       `--${boundary}`,
-      'Content-Type: application/pdf; name="completed-document.pdf"',
-      `Content-Disposition: attachment; filename="completed-document.pdf"; filename*=UTF-8''${encodeURIComponent(attachment.filename).replace(/'/g, "%27")}`,
+      `Content-Type: application/pdf;\r\n ${attachmentNameParameter("name", attachment.filename)}`,
+      `Content-Disposition: attachment;\r\n ${attachmentNameParameter("filename", attachment.filename)}`,
       'Content-Transfer-Encoding: base64', '',
       lines64(Buffer.from(attachment.bytes.buffer, attachment.bytes.byteOffset, attachment.bytes.byteLength).toString("base64")),
       `--${boundary}--`, '',

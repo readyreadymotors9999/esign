@@ -1,3 +1,4 @@
+import { documentPdfFilename } from "../_shared/document-name.ts";
 import { signingDate, SIGNING_TIME_ZONE } from "../_shared/date.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.118.0";
 import { PDFDocument } from "pdf-lib";
@@ -118,7 +119,7 @@ async function deliverNotifications(documentId?: string) {
           const document = await documentFor(notice.document_id);
           const path = document.signed_path;
           if (!path || document.status !== "completed") throw new Error("Final PDF unavailable");
-          const filename = document.title.replace(/[\r\n\/\\]/g, "-").replace(/\.pdf$/i, "") + " - completed.pdf";
+          const filename = documentPdfFilename(document.title);
           attachment = { filename, bytes: await original(path) };
         }
         const providerId = await sendNotification(token, notice.recipient, notice.subject, notice.message, notice.id, fetch, attachment);

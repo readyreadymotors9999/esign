@@ -85,12 +85,21 @@ test('view notifications deduplicate per invitation; completion queues both part
 
 test('completion email MIME carries the exact signed PDF and a safe Unicode filename', async () => {
  const bytes=new Uint8Array([37,80,68,70,45,0,255,13,10,128]);
- const attachment={filename:'寄卖合同 - Junjie Wu - completed.pdf',bytes};
+ const attachment={filename:'寄卖合同 - Junjie Wu.pdf',bytes};
  const raw=notificationRaw('signer@example.com','Completed','All participants signed.','attachment-test',attachment);
  const mime=Buffer.from(raw,'base64url').toString();
  assert.match(mime,/Content-Type: multipart\/mixed/);
  assert.match(mime,/Content-Type: application\/pdf/);
- assert.ok(mime.includes(encodeURIComponent(attachment.filename)));
+ const disposition = mime.match(/Content-Disposition: attachment;([\s\S]*?)\r\nContent-Transfer-Encoding/)[1];
+ const sections = [...disposition.matchAll(/filename\*(?:\d+\*)?=([^;\r\n]+)/g)].map(match=>match[1]).join('').replace(/^UTF-8''/,'');
+ assert.equal(decodeURIComponent(sections),attachment.filename);
+ assert.ok(!mime.includes('completed-document'));
+ const longName='租车合同'.repeat(45)+' - Yitong Ma.pdf';
+ const longMime=Buffer.from(notificationRaw('signer@example.com','Completed','Signed','long-file',{filename:longName,bytes}),'base64url').toString();
+ const longHeader=longMime.match(/Content-Disposition: attachment;([\s\S]*?)\r\nContent-Transfer-Encoding/)[1];
+ const longSections=[...longHeader.matchAll(/filename\*(?:\d+\*)?=([^;\r\n]+)/g)].map(match=>match[1]).join('').replace(/^UTF-8''/,'');
+ assert.equal(decodeURIComponent(longSections),longName);
+ assert.ok(longHeader.split('\r\n').every(line=>line.length<998));
  const encoded=mime.split('Content-Transfer-Encoding: base64\r\n\r\n')[2].split('\r\n--')[0];
  assert.deepEqual(new Uint8Array(Buffer.from(encoded,'base64')),bytes);
  await sendNotification('token','signer@example.com','Completed','All participants signed.','attachment-test',async(_,init)=>{

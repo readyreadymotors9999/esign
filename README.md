@@ -492,3 +492,5 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 ```
 
 Tests verify expired invitation renewal, old-token rejection/new-token acceptance, ownership checks, signed/processing participant rejection, stale-renewal conflicts, preservation of prior signatures/partial PDFs, and email/share UI flows. Live reminder email delivery requires the owner's Supabase deployment and configured Gmail sender.
+
+Completed PDF downloads and completion email attachments now retain the original document title as the filename, adding `.pdf` only if needed. No signed/completed prefix or suffix is added. MIME filenames support Unicode and long names with RFC 2231 parameters and an encoded-word compatibility name. Redeploy `esign` for email attachment naming; no SQL migration is required.

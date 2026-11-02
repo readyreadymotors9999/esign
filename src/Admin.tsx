@@ -9,6 +9,7 @@ import {
   type Field,
 } from "./api";
 import { PdfPreview as Pdf, prefetchPdfPreview } from "./PdfPreview";
+import { documentPdfFilename } from "../supabase/functions/_shared/document-name";
 import { signatureFieldKey } from "../supabase/functions/_shared/validation";
 import { DraftHistory } from "./draftHistory";
 import { DraftSaver } from "./draftSaver";
@@ -1272,7 +1273,7 @@ export default function Admin({
                           const objectUrl = URL.createObjectURL(await r.blob()),
                             a = document.createElement("a");
                           a.href = objectUrl;
-                          a.download = `signed-${selected.title.replace(/\.pdf$/i, "")}.pdf`;
+                          a.download = documentPdfFilename(selected.title);
                           a.click();
                           setTimeout(
                             () => URL.revokeObjectURL(objectUrl),
