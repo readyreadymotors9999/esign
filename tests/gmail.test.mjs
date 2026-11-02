@@ -131,3 +131,13 @@ test("one-time OAuth helper uses offline sending scope, PKCE and callback state"
   assert.equal(validState("ééééé", "state"), false);
   assert.equal(validState(null, "state"), false);
 });
+
+test('reminder email identifies the document and carries only the new 72-hour signing link',()=>{
+ const raw=invitationRaw('signer@example.com','租车合同 - Example','https://example.com/#/sign/new-token','reminder-test',true);
+ const mime=Buffer.from(raw,'base64url').toString();
+ const subject=mime.match(/Subject: ([\s\S]*?)\r\nMessage-ID/)[1];
+ const decoded=[...subject.matchAll(/=\?UTF-8\?B\?([^?]+)\?=/g)].map(match=>Buffer.from(match[1],'base64').toString()).join('');
+ assert.equal(decoded,'Reminder: 租车合同 - Example — signature requested');
+ const parts=[...mime.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--/g)].map(match=>Buffer.from(match[1],'base64').toString());
+ assert.ok(parts.every(part=>part.includes('new-token')&&part.includes('72 hours')));
+});

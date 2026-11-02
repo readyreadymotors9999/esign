@@ -30,6 +30,7 @@ export function invitationRaw(
   title: string,
   link: string,
   invitationId: string,
+  reminder = false,
 ): string {
   const to = emailAddress(email),
     url = new URL(link);
@@ -38,13 +39,13 @@ export function invitationRaw(
   if (!/^[a-zA-Z0-9-]+$/.test(invitationId))
     throw new GmailError("Invalid invitation ID.");
   const boundary = `esign-${invitationId}`;
-  const text = `Ready Ready Motors, Inc. invites you to review and sign ${title}.\n\nLichen Wang has already signed.\n\n${link}\n\nThis private link expires in 72 hours and can be used to sign once. Do not forward it. If you did not expect this message, contact the sender.`;
-  const html = `<h2>Ready Ready Motors, Inc.</h2><p>Lichen Wang has signed <strong>${escapeHtml(title)}</strong>. Please review and add your signature.</p><p><a href="${escapeHtml(link)}">Review and sign document</a></p><p>Your private link expires in 72 hours and can be used to sign once. Do not forward it.</p>`;
+  const text = `${reminder ? "Reminder: " : ""}Ready Ready Motors, Inc. invites you to review and sign ${title}.\n\nLichen Wang has already signed.\n\n${link}\n\nThis private link expires in 72 hours and can be used to sign once. Do not forward it. If you did not expect this message, contact the sender.`;
+  const html = `<h2>${reminder ? "Signature reminder" : "Ready Ready Motors, Inc."}</h2><p>Lichen Wang has signed <strong>${escapeHtml(title)}</strong>. Please review and add your signature.</p><p><a href="${escapeHtml(link)}">Review and sign document</a></p><p>Your private link expires in 72 hours and can be used to sign once. Do not forward it.</p>`;
   const mime = [
     `From: Ready Ready Motors <${GMAIL_SENDER}>`,
     `To: ${to}`,
     `Reply-To: ${GMAIL_SENDER}`,
-    `Subject: =?UTF-8?B?${base64Utf8("Ready Ready Motors — document ready to sign")}?=`,
+    `Subject: ${encodedSubject(reminder ? `Reminder: ${title} — signature requested` : "Ready Ready Motors — document ready to sign")}`,
     `Message-ID: <esign-${invitationId}@gmail.com>`,
     `Date: ${new Date().toUTCString()}`,
     "MIME-Version: 1.0",
@@ -122,6 +123,7 @@ export async function sendGmail(
   link: string,
   invitationId: string,
   request: typeof fetch = fetch,
+  reminder = false,
 ): Promise<string> {
   const r = await request(
     "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
@@ -132,7 +134,7 @@ export async function sendGmail(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        raw: invitationRaw(email, title, link, invitationId),
+        raw: invitationRaw(email, title, link, invitationId, reminder),
       }),
       signal: AbortSignal.timeout(20000),
     },

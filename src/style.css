@@ -1831,3 +1831,9 @@ summary:focus-visible,
 
 .selected-signer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .selected-signer-actions .remove-selected-signer { color: #a33228; }
+
+.invitation-actions { margin-top: 20px; }
+.invitation-actions h3 { font-size: 14px; }
+.invitation-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid #dde7e3; }
+.invitation-card small { overflow-wrap: anywhere; color: #65776f; }
+.invitation-card button { align-self: flex-start; font-size: 12px; }

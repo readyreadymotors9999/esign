@@ -570,8 +570,13 @@ Deno.serve(async (request) => {
         .eq("document_id", doc.id)
         .order("created_at");
       check(error);
+      const { data: invitations, error: invitationError } = await db.from("signing_sessions")
+        .select("id,signer_id,signer_name,recipient_email,status,expires_at,viewed_at,completed_at,delivery,batch_id")
+        .eq("document_id", doc.id).order("created_at");
+      check(invitationError);
       return json({
-        capabilities: { pdfEditing: true, pdfPageRanges: true, draftAutosave: true, draftRestore: true, documentSigners: true },
+        invitations: (invitations || []).filter(invitation => invitation.batch_id === doc.active_batch),
+        capabilities: { resendInvitation: true, pdfEditing: true, pdfPageRanges: true, draftAutosave: true, draftRestore: true, documentSigners: true },
         document: doc,
         audit: data,
         url:
@@ -583,6 +588,28 @@ Deno.serve(async (request) => {
                   doc.original_path,
               ),
       });
+    }
+    if (body.action === "resend_invitation") {
+      if (doc.status !== "sent" || typeof body.sessionId !== "string") fail("Choose an unfinished invitation.", 409);
+      const { data: invitation, error } = await db.from("signing_sessions").select("*").eq("id", body.sessionId).eq("document_id", doc.id).maybeSingle();
+      check(error);
+      if (!invitation || invitation.status !== "pending" || invitation.batch_id !== doc.active_batch) fail("This participant has signed or their invitation changed.", 409);
+      const delivery = body.delivery || invitation.delivery;
+      if (!["email", "share"].includes(delivery)) fail("Choose email or share link.");
+      const gmailToken = delivery === "email" ? await gmailAccessToken(gmailConfig(name => Deno.env.get(name))) : "";
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(32))).map(value => value.toString(16).padStart(2, "0")).join("");
+      const renewed = await db.rpc("renew_signing_invitation", { p_document: doc.id, p_owner: user.id, p_session: invitation.id, p_expected_hash: invitation.token_hash, p_hash: await digest(token), p_delivery: delivery });
+      if (renewed.error?.code === "PGRST202") fail("Invitation renewal is not available in the database yet. Apply migration 202611020001.", 409);
+      if (renewed.error) fail("The invitation changed or someone is signing. Refresh and try again shortly.", 409);
+      const link = `${appUrl.replace(/\/$/, "")}/#/sign/${token}`;
+      if (delivery === "share") return json({ link, expires_at: renewed.data.expires_at });
+      try {
+        const messageId = await sendGmail(gmailToken, invitation.recipient_email, doc.title, link, crypto.randomUUID(), fetch, true);
+        await audit(doc.id, "reminder_accepted_by_provider", invitation.recipient_email, invitation.id, { message_id: messageId, expires_at: renewed.data.expires_at });
+      } catch {
+        fail("The old link was replaced, but email delivery could not be confirmed. Use Resend invite again to create another fresh link.", 502);
+      }
+      return json({ sent: true, expires_at: renewed.data.expires_at });
     }
     if (body.action === "download") {
       if (doc.status !== "completed" || !doc.signed_path)

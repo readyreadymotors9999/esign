@@ -475,3 +475,20 @@ Migration `202611010004_repair_document_signers.sql` repairs the signer columns/
 The deployment handoff includes a fresh backend ZIP for owners who download source rather than maintain a Git checkout. Extract into a new folder and run the existing three Supabase commands there. Do not reuse an older extracted folder. This repair is covered by a test that starts with only draft_revision (no signer columns), applies the repair, opens a multi-signer batch, and reruns the repair without changing that batch.
 
 Selected non-company signers now have a visible **Remove signer** action beside Edit signer below the Field signer selector. Removal confirms the affected person, removes their fields, verifies the saved roster before updating the UI, and keeps the address-book contact. Lichen Wang remains fixed. The explanatory paragraph about explicitly added contacts is removed. This is frontend-only.
+
+
+### Renew unfinished signing invitations
+
+Invitations still expire 72 hours after creation. An unfinished document now lists the current batch's participants, signing status, and expiration time in its sidebar. **Resend invite** sends a reminder email with a new private 72-hour link; share delivery offers **Create new 72-hour link** and displays the replacement link for copying. Renewal applies to one pending participant, including expired invitations. Their old token is replaced immediately, while all existing company/participant signatures, the partial PDF, other participants' links, and view history stay intact. Signed participants cannot be renewed. No automatic reminder emails are scheduled.
+
+The renewal transaction locks the document, validates the owner/current batch and expected old token, and rejects renewal while a participant is signing. Concurrent stale renewals cannot overwrite the newest link. Gmail authorization is checked before rotating an email link. If sending becomes unconfirmed after rotation, the new token is not rolled back and the user is told to retry; the prior link stays invalid. Each resend uses a fresh message ID and a Reminder subject containing the document title. Only token hashes are stored, and renewal events are audited without raw signing URLs.
+
+Apply `202611020001_resend_invitation.sql` and deploy the matching function from a fresh copy of this source:
+
+```sh
+npx supabase link --project-ref nyjhgexemcxfncoepudy
+npx supabase db push
+npx supabase functions deploy esign --no-verify-jwt --use-api
+```
+
+Tests verify expired invitation renewal, old-token rejection/new-token acceptance, ownership checks, signed/processing participant rejection, stale-renewal conflicts, preservation of prior signatures/partial PDFs, and email/share UI flows. Live reminder email delivery requires the owner's Supabase deployment and configured Gmail sender.

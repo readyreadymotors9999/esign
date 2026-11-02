@@ -42,11 +42,25 @@ test('multi-signer sessions serialize final PDFs and notify all participants onl
   assert.match(view[0].subject,/Alice Chen/);assert.match(view[1].subject,/Bob Wu/);
   await db.query("select public.claim_signing_session('alice')");
   await assert.rejects(db.query("select public.claim_signing_session('bob')"),/Another participant/);
+  await assert.rejects(db.query("select public.renew_signing_invitation($1,$2,$3,'bob',$4,'email')",[doc,owner,bob,'b'.repeat(64)]),/participant is signing/);
   await db.query('select public.finish_signing_session($1,$2,$3)',[alice,'alice-signed.pdf','{}']);
   let document=(await db.query('select * from public.documents')).rows[0];
   assert.equal(document.status,'sent');assert.equal(document.working_path,'alice-signed.pdf');assert.equal(document.signed_path,null);
   assert.deepEqual(document.signed_signer_ids,['alice']);
   assert.equal((await db.query("select * from public.email_notifications where kind='completed'")).rows.length,0);
+  await db.query("update public.signing_sessions set expires_at=now()-interval '1 day' where id=$1",[bob]);
+  await assert.rejects(db.query("select public.renew_signing_invitation($1,$2,$3,'bob',$4,'email')",[doc,'22222222-2222-4222-8222-222222222222',bob,'b'.repeat(64)]));
+  await assert.rejects(db.query("select public.renew_signing_invitation($1,$2,$3,'alice',$4,'email')",[doc,owner,alice,'a'.repeat(64)]));
+  const renewed=(await db.query("select * from public.renew_signing_invitation($1,$2,$3,'bob',$4,'email')",[doc,owner,bob,'b'.repeat(64)])).rows[0];
+  assert.equal(renewed.token_hash,'b'.repeat(64));
+  assert.ok(new Date(renewed.expires_at).getTime()>Date.now()+71*3600000);
+  await assert.rejects(db.query("select public.claim_signing_session('bob')"));
+  await assert.rejects(db.query("select public.renew_signing_invitation($1,$2,$3,'bob',$4,'email')",[doc,owner,bob,'c'.repeat(64)]));
+  const claim=(await db.query("select * from public.claim_signing_session($1)",['b'.repeat(64)])).rows[0];
+  assert.equal(claim.id,bob);assert.equal(claim.status,'processing');
+  assert.equal((await db.query('select working_path from public.documents')).rows[0].working_path,'alice-signed.pdf');
+  assert.deepEqual((await db.query('select signed_signer_ids from public.documents')).rows[0].signed_signer_ids,['alice']);
+
   // Reopening a partly signed batch invalidates remaining links and drops its partial PDF.
   await db.query('select public.cancel_failed_invitation($1,$2,$3)',[doc,owner,alice]);
   document=(await db.query('select * from public.documents')).rows[0];
@@ -61,6 +75,7 @@ test('multi-signer sessions serialize final PDFs and notify all participants onl
   await db.query('select public.finish_signing_session($1,$2,$3)',[next[0].id,'everyone-final.pdf','{}']);
   document=(await db.query('select * from public.documents')).rows[0];
   assert.equal(document.status,'completed');assert.equal(document.signed_path,'everyone-final.pdf');
+  await assert.rejects(db.query("select public.renew_signing_invitation($1,$2,$3,'next-alice',$4,'email')",[doc,owner,next[0].id,'d'.repeat(64)]));
   const notifications=(await db.query("select recipient from public.email_notifications where kind='completed' order by recipient")).rows;
   assert.deepEqual(notifications.map(row=>row.recipient),['alice@example.com','bob@example.com','readyreadymotors9999@gmail.com']);
   await assert.rejects(db.query('select public.revoke_signing_session($1,$2)',[doc,owner]));

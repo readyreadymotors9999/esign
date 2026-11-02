@@ -84,6 +84,9 @@ export default function Admin({
   const [appliedSignatures, setAppliedSignatures] = useState<Set<string>>(new Set());
   const [signatureTarget, setSignatureTarget] = useState<string>();
   const [shareLinks, setShareLinks] = useState<{ name: string; email: string; link: string }[]>([]);
+  const [invitations, setInvitations] = useState<any[]>([]);
+  const [resendAvailable, setResendAvailable] = useState(false);
+  const [renewedLink, setRenewedLink] = useState<{ name: string; link: string }>();
   const [sidebarWidth, setSidebarWidth] = useState(400);
   const [zoomHost, setZoomHost] = useState<HTMLDivElement | null>(null);
   const dividerDrag = useRef<{ x: number; width: number } | null>(null);
@@ -252,6 +255,7 @@ export default function Admin({
     setSelected(undefined);
     setShare("");
     setShareLinks([]);
+    setRenewedLink(undefined);
     setSource(null);
     setMessage("");
     setRecipientEditor(false);
@@ -351,6 +355,8 @@ export default function Admin({
       setSignatureTarget(undefined);
       setUrl(data.url || "");
       setAudit(data.audit);
+      setInvitations(data.invitations || []);
+      setResendAvailable(data.capabilities?.resendInvitation === true);
       setRename(data.document.title);
       if (selected?.id !== id || selected.status !== "draft" || data.document.status !== "draft") {
         setSignature("");
@@ -432,7 +438,7 @@ export default function Admin({
     ) && fields.filter(field => field.signer === "company" && field.type === "signature").every(field => appliedSignatures.has(signatureFieldKey(field)));
   return (
     <div className={`admin-workspace ${selected ? "document-open" : ""}`}>
-      {autosaveToast && selected?.status === "draft" && (
+      {autosaveToast && selected && (
         <div className="autosave-toast" role="status" aria-live="polite">
           <span aria-hidden="true">✓</span> <span>{autosaveToast}</span>
         </div>
@@ -901,6 +907,39 @@ export default function Admin({
                     recipientHost,
                   )}
                 <div ref={setToolsHost} />
+                {selected.status === "sent" && resendAvailable && (
+                  <section className="invitation-actions" aria-label="Signing invitations">
+                    <h3>Signing invitations</h3>
+                    {invitations.map(invitation => (
+                      <div className="invitation-card" key={invitation.id}>
+                        <strong>{invitation.signer_name || invitation.recipient_email}</strong>
+                        <small>{invitation.recipient_email}</small>
+                        <small>{invitation.status === "completed" ? "Signed" : invitation.status === "processing" ? "Signing in progress" : new Date(invitation.expires_at).getTime() <= Date.now() ? "Expired" : invitation.viewed_at ? "Viewed · awaiting signature" : "Awaiting signature"}</small>
+                        {invitation.status === "pending" && <>
+                          <small>Expires {new Date(invitation.expires_at).toLocaleString()}</small>
+                          <button type="button" className="secondary" disabled={busy} onClick={() => {
+                            if (!window.confirm(`Resend to ${invitation.signer_name || invitation.recipient_email}? Their old link will stop working and the new link will expire in 72 hours. Existing signatures will stay saved.`)) return;
+                            void task(async () => {
+                              let result;
+                              try { result = await api("resend_invitation", { documentId: selected.id, sessionId: invitation.id }); }
+                              catch (error) { await show(selected.id).catch(() => {}); throw error; }
+                              if (result.link) {
+                                setRenewedLink({ name: invitation.signer_name || invitation.recipient_email, link: result.link });
+                                setShareLinks(current => current.map(item => item.email === invitation.recipient_email ? { ...item, link: result.link } : item));
+                                setShare(current => current ? result.link : current);
+                              }
+                              await show(selected.id);
+                              showCenteredNotice(result.link ? "New signing link created" : "Invitation resent");
+                              setMessage(result.link ? "New 72-hour link created. Share it with the named signer; the old link has expired." : "New 72-hour invitation sent. The previous link no longer works.");
+                            });
+                          }}>{invitation.delivery === "share" ? "Create new 72-hour link" : "Resend invite"}</button>
+                        </>}
+                      </div>
+                    ))}
+                    {renewedLink && <label>New signing link · {renewedLink.name}<input aria-label="Renewed signing link" readOnly value={renewedLink.link} onFocus={event => event.target.select()} /></label>}
+                  </section>
+                )}
+
                 {selected.status === "draft" && (
                   <form
                     className="send-form"
