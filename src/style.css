@@ -1837,3 +1837,14 @@ summary:focus-visible,
 .invitation-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid #dde7e3; }
 .invitation-card small { overflow-wrap: anywhere; color: #65776f; }
 .invitation-card button { align-self: flex-start; font-size: 12px; }
+
+.document-list-row { display: flex; align-items: center; position: relative; border-bottom: 1px solid #edf1f1; }
+.document-list-row .doc-row { flex: 1; min-width: 0; border-bottom: 0; border-top: 0; }
+.document-menu { position: relative; margin-right: 18px; }
+.document-menu summary { cursor: pointer; list-style: none; padding: 8px 16px; border-radius: 10px; background: #edf1f1; font-size: 24px; }
+.document-menu summary::-webkit-details-marker { display: none; }
+.document-menu summary:focus-visible { outline: 2px solid #167e6a; }
+.document-menu-items { position: absolute; right: 0; top: 100%; z-index: 20; padding: 8px; background: white; border-radius: 12px; box-shadow: 0 4px 20px #20344430; min-width: 160px; }
+.document-menu-items button { width: 100%; white-space: nowrap; }
+.gmail-settings { margin-bottom: 24px; padding: 24px; }
+.gmail-settings pre { white-space: pre-wrap; overflow-wrap: anywhere; }

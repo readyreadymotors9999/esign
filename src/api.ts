@@ -52,10 +52,10 @@ export async function api<T = any>(
     const { data, error } = await supabase
       .from("documents")
       .select("id,title,status,created_at,viewed_at")
-      .eq("owner_id", session.user.id)
+      .eq("owner_id", session.user.id).neq("status", "deleted")
       .order("created_at", { ascending: false });
     if (error && (error.code === "42703" || error.code === "PGRST204")) {
-      const fallback = await supabase.from("documents").select("id,title,status,created_at").eq("owner_id", session.user.id).order("created_at", { ascending: false });
+      const fallback = await supabase.from("documents").select("id,title,status,created_at").eq("owner_id", session.user.id).neq("status", "deleted").order("created_at", { ascending: false });
       if (fallback.error) throw fallback.error;
       return { documents: fallback.data } as T;
     }

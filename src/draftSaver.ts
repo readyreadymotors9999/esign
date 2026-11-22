@@ -1,6 +1,8 @@
 // Serializes writes and coalesces drag updates. A revision conflict stops saves
 // rather than overwriting another tab's changes.
 export class DraftSaver {
+  private cancelled = false;
+  cancel() { this.cancelled = true; clearTimeout(this.timer); this.timer = undefined; }
   private saved: string;
   private latest: string;
   private timer?: ReturnType<typeof setTimeout>;
@@ -26,6 +28,7 @@ export class DraftSaver {
   get revisionValue() { return this.revision; }
   get dirty() { return this.latest !== this.saved || !!this.running || !!this.failure; }
   update(fields: unknown) {
+    if (this.cancelled) return;
     this.latest = JSON.stringify(fields);
     if (!this.dirty) {
       clearTimeout(this.timer); this.timer = undefined;
@@ -40,6 +43,7 @@ export class DraftSaver {
     }, 5 * 60 * 1000);
   }
   async flush(automatic = false): Promise<void> {
+    if (this.cancelled) return;
     clearTimeout(this.timer);
     this.timer = undefined;
     if (this.running) { await this.running; return this.flush(automatic); }
@@ -47,7 +51,7 @@ export class DraftSaver {
     if (!this.dirty) return;
     this.status("Saving draft…");
     this.running = (async () => {
-      while (this.latest !== this.saved) {
+      while (!this.cancelled && this.latest !== this.saved) {
         const snapshot = this.latest;
         this.revision = await this.write(JSON.parse(snapshot), this.revision);
         this.saved = snapshot;

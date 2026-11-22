@@ -84,10 +84,14 @@ export async function gmailAccessToken(
     }),
     signal: AbortSignal.timeout(15000),
   });
-  if (!r.ok)
-    throw new GmailError(
-      "Gmail authorization expired or was revoked. Reconnect the sending account.",
-    );
+  if (!r.ok) {
+    const problem = await r.json().catch(() => ({}));
+    if (problem.error === "invalid_grant")
+      throw new GmailError("Gmail authorization expired or was revoked. Open My Account → Settings → Gmail sending account for reconnection steps.");
+    if (problem.error === "invalid_client" || problem.error === "unauthorized_client")
+      throw new GmailError("Google rejected the Gmail OAuth client. Check the sending account credentials in Supabase before reconnecting.");
+    throw new GmailError("Google could not refresh Gmail access right now. Try again shortly. If this continues, check the sending account in Settings.");
+  }
   const token = await r.json();
   if (typeof token.access_token !== "string" || !token.access_token)
     throw new GmailError(

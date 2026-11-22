@@ -4,6 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.118.0";
 import { PDFDocument } from "pdf-lib";
 import {
   GmailError,
+  GMAIL_SENDER,
   gmailConfig,
   gmailAccessToken,
   sendGmail,
@@ -150,7 +151,7 @@ async function sessionFor(token: unknown) {
   return data;
 }
 async function documentFor(id: string, owner?: string) {
-  let query = db.from("documents").select("*").eq("id", id);
+  let query = db.from("documents").select("*").eq("id", id).neq("status", "deleted");
   if (owner) query = query.eq("owner_id", owner);
   const { data, error } = await query.maybeSingle();
   check(error);
@@ -376,11 +377,16 @@ Deno.serve(async (request) => {
       .maybeSingle();
     check(adminError);
     if (!admin) fail("Administrator access is required.", 403);
+    if (body.action === "gmail_status") {
+      await gmailAccessToken(gmailConfig(name => Deno.env.get(name)));
+      return json({ connected: true, sender: GMAIL_SENDER });
+    }
     if (body.action === "list") {
       const { data, error } = await db
         .from("documents")
         .select("*")
         .eq("owner_id", user.id)
+        .neq("status", "deleted")
         .order("created_at", { ascending: false });
       check(error);
       return json({ documents: data });
@@ -437,6 +443,12 @@ Deno.serve(async (request) => {
     )
       fail("Invalid document ID.");
     const doc = await documentFor(body.documentId, user.id);
+    if (body.action === "delete_draft") {
+      if (doc.status !== "draft") fail("Only draft documents can be deleted.", 409);
+      const result = await db.rpc("delete_document_draft", { p_document: doc.id, p_owner: user.id });
+      if (result.error) fail("This document is no longer a draft. Refresh before trying again.", 409);
+      return json({ deleted: true });
+    }
     if (body.action === "restore_draft") {
       if (doc.status !== "draft" || typeof body.path !== "string" || !Number.isInteger(body.revision)) fail("Invalid draft restore.", 409);
       if (typeof body.title !== "string" || !body.title.trim() || body.title.length > 200) fail("Invalid document filename.");

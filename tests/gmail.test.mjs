@@ -141,3 +141,8 @@ test('reminder email identifies the document and carries only the new 72-hour si
  const parts=[...mime.matchAll(/Content-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--/g)].map(match=>Buffer.from(match[1],'base64').toString());
  assert.ok(parts.every(part=>part.includes('new-token')&&part.includes('72 hours')));
 });
+
+test("temporary Google errors and OAuth client misconfiguration do not masquerade as expired consent", async () => {
+  await assert.rejects(() => gmailAccessToken(config, async () => Response.json({error:"temporarily_unavailable"}, {status:503})), /Try again shortly/);
+  await assert.rejects(() => gmailAccessToken(config, async () => Response.json({error:"invalid_client"}, {status:401})), /OAuth client/);
+});

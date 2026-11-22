@@ -494,3 +494,26 @@ npx supabase functions deploy esign --no-verify-jwt --use-api
 Tests verify expired invitation renewal, old-token rejection/new-token acceptance, ownership checks, signed/processing participant rejection, stale-renewal conflicts, preservation of prior signatures/partial PDFs, and email/share UI flows. Live reminder email delivery requires the owner's Supabase deployment and configured Gmail sender.
 
 Completed PDF downloads and completion email attachments now retain the original document title as the filename, adding `.pdf` only if needed. No signed/completed prefix or suffix is added. MIME filenames support Unicode and long names with RFC 2231 parameters and an encoded-word compatibility name. Redeploy `esign` for email attachment naming; no SQL migration is required.
+
+## Gmail reconnection and draft deletion
+
+If sending reports expired/revoked authorization, open **My Account → Settings → Gmail sending account**.
+**Check connection** verifies the configured token with Google without sending email.
+**Reconnect Gmail** shows the owner authorization steps. An expired refresh token cannot be repaired by a frontend deployment: the account owner must authorize Google again and replace the Supabase Gmail secrets.
+Check Google Auth Platform → Audience before reconnecting: Testing-mode refresh tokens with Gmail scopes may expire after seven days. Follow Google's production publishing/verification requirements for long-term use. Do not put credentials in the frontend or paste them into chat.
+
+Using a new private output filename:
+```sh
+node scripts/connect-gmail.mjs --client /private/path/client.json --output /private/path/gmail-reconnect.env
+npx supabase secrets set --project-ref nyjhgexemcxfncoepudy --env-file /private/path/gmail-reconnect.env
+```
+
+Draft rows have an **⋯ → Delete draft** menu in every applicable dashboard tab. The editor also has **Delete draft** next to Save draft. Both require confirmation. Sent/completed documents cannot be deleted. Deleted drafts disappear from active lists and cannot be opened/edited through the app; private PDFs, existing signing records and audit history are retained. There is no restore UI. The deletion transaction uses the same document lock as sending, preventing a concurrent send from being deleted.
+
+Deploy the new migration and API from this latest source:
+```sh
+npx supabase link --project-ref nyjhgexemcxfncoepudy
+npx supabase db push --remote
+npx supabase functions deploy esign --no-verify-jwt --use-api
+```
+This applies `202611220001_delete_drafts.sql`. Gmail reconnection additionally needs the owner authorization above.

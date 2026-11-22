@@ -8,6 +8,9 @@ type Recipient = {
 };
 const empty = { id: "", first_name: "", last_name: "", email: "" };
 export default function AccountSettings() {
+  const [gmailMessage, setGmailMessage] = useState("");
+  const [gmailChecking, setGmailChecking] = useState(false);
+  const [gmailHelp, setGmailHelp] = useState(false);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
   const [editing, setEditing] = useState<Recipient | null>(null);
   const [search, setSearch] = useState("");
@@ -49,6 +52,36 @@ export default function AccountSettings() {
         <a href="#/" className="button secondary">
           Back to documents
         </a>
+      </div>
+      <div className="card gmail-settings">
+        <h2>Gmail sending account</h2>
+        <p>readyreadymotors9999@gmail.com</p>
+        <div className="actions">
+          <button className="secondary" disabled={gmailChecking} onClick={async () => {
+            setGmailChecking(true);
+            setGmailMessage("");
+            try {
+              await api("gmail_status");
+              setGmailMessage("Gmail is connected and ready to send.");
+            } catch (error) {
+              setGmailMessage((error as Error).message);
+              setGmailHelp(true);
+            } finally { setGmailChecking(false); }
+          }}>{gmailChecking ? "Checking…" : "Check connection"}</button>
+          <button className="secondary" onClick={() => setGmailHelp(value => !value)}>Reconnect Gmail</button>
+        </div>
+        {gmailMessage && <p role="status">{gmailMessage}</p>}
+        {gmailHelp && <div>
+          <p>The sending account owner must authorize Google again. Reconnecting keeps your documents and signing links.</p>
+          <ol>
+            <li>Check Google Cloud → Google Auth Platform → Audience. Testing apps with Gmail permission can lose authorization after seven days. Follow Google's publishing requirements for long-term use before reconnecting.</li>
+            <li>Run the Gmail connection helper from the latest app source on your computer, using your Google Desktop OAuth credentials JSON.</li>
+            <li>Upload the new credentials to the linked Supabase project, then use Check connection here.</li>
+          </ol>
+          <pre><code>{'node scripts/connect-gmail.mjs --client /path/to/google-client.json --output /path/to/gmail-reconnect.env\nnpx supabase secrets set --project-ref nyjhgexemcxfncoepudy --env-file /path/to/gmail-reconnect.env'}</code></pre>
+          <p>Keep the credentials files private. Use a new output filename if the helper says the file already exists.</p>
+          <a href="https://github.com/readyreadymotors9999/esign#one-time-gmail-authorization-on-your-own-computer" target="_blank" rel="noreferrer">Full Gmail connection instructions</a>
+        </div>}
       </div>
       <div className="settings-tabs">
         <span>

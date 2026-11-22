@@ -250,6 +250,25 @@ export default function Admin({
     },
     [],
   );
+  async function deleteDraft(doc: DocumentSummary) {
+    if (!window.confirm(`Delete “${doc.title}”? This draft will be removed from your documents.`)) return;
+    if (selected?.id === doc.id) await draftSaver.current?.flush().catch(() => {});
+    await api("delete_draft", { documentId: doc.id });
+    if (selected?.id === doc.id) {
+      draftSaver.current?.cancel();
+      draftSaver.current = undefined;
+      detailRequest.current++;
+      setSelected(undefined);
+      setUrl("");
+      setRecipientEditor(false);
+      setShowSignature(false);
+    }
+    listRequest.current++;
+    const remaining = docs.filter(item => item.id !== doc.id);
+    setDocs(remaining);
+    onDocumentsChange(remaining);
+    setMessage("Draft deleted.");
+  }
   async function goHome() {
     try { await draftSaver.current?.flush(); } catch (error) { setMessage((error as Error).message); return; }
     detailRequest.current++;
@@ -658,10 +677,10 @@ export default function Admin({
             {docs
               .filter((doc) => filter === "all" || doc.status === filter)
               .map((doc) => (
+                <div className="document-list-row" key={doc.id}>
                 <button
                   disabled={busy}
                   className="doc-row"
-                  key={doc.id}
                   onPointerEnter={() => {
                     void prefetchPdfPreview().catch(() => {});
                   }}
@@ -685,6 +704,18 @@ export default function Admin({
                   </span>
                   <span className={`badge ${documentStatus(doc)}`}>{documentStatus(doc)}</span>
                 </button>
+                {doc.status === "draft" && (
+                  <details className="document-menu">
+                    <summary aria-label={`Actions for ${doc.title}`}>⋯</summary>
+                    <div className="document-menu-items">
+                      <button type="button" className="secondary danger-link" disabled={busy}
+                        onClick={event => { event.currentTarget.closest("details")?.removeAttribute("open"); void task(() => deleteDraft(doc)); }}>
+                        Delete draft
+                      </button>
+                    </div>
+                  </details>
+                )}
+                </div>
               ))}
           </aside>
         )}
@@ -1055,6 +1086,7 @@ export default function Admin({
                       if (window.confirm("Discard all document edits since you opened this editor, including changes already autosaved?")) void task(() => restoreHistory("discard"));
                     }}>Discard all changes</button>
                     <button type="button" disabled={busy || !autosaveAvailable} onClick={() => void task(saveDraftNow)}>Save draft</button>
+                    <button type="button" className="secondary danger-link" disabled={busy} onClick={() => void task(() => deleteDraft(selected))}>Delete draft</button>
                   </div>
                 )}
 
