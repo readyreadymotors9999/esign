@@ -155,7 +155,8 @@ function App() {
         )}
       </main>
       <footer>
-        Ready Ready Motors, Inc. · Private documents. Clear agreements.
+        Ready Ready Motors, Inc. · Private documents. Clear agreements.{" "}
+        <a href={`${import.meta.env.BASE_URL}privacy.html`}>Privacy Policy</a>
       </footer>
     </>
   );
